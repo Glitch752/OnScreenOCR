@@ -4,9 +4,8 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Window, WindowId, WindowLevel, Fullscreen};
-use std::num::NonZeroU32;
-use std::rc::Rc;
 use std::thread;
+use pixels::{Pixels, SurfaceTexture};
 
 fn main() {
     // Only run event loop on user interaction
@@ -29,7 +28,7 @@ fn main() {
     event_loop.run_app(&mut App::default()).expect("Unable to run event loop");
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct Selection {
     x: i32,
     y: i32,
@@ -37,17 +36,30 @@ struct Selection {
     height: i32
 }
 
+impl Default for Selection {
+    fn default() -> Self {
+        Selection {
+            x: 100,
+            y: 100,
+            width: 200,
+            height: 200
+        }
+    }
+}
+
 #[derive(Default)]
 struct App {
-    window: Option<Rc<Window>>,
-    surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
+    window: Option<Window>,
+    pixels: Option<Pixels>,
 
-    last_selection: Selection,
+    size: (u32, u32),
+
+    last_selection: Option<Selection>,
     current_selection: Selection
 }
 
 impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
@@ -59,7 +71,7 @@ impl ApplicationHandler for App {
         // TODO: Use the monitor that the mouse is currently on
         let monitor = event_loop.primary_monitor().unwrap();
 
-        self.window = Some(Rc::new(event_loop.create_window(
+        self.window = Some(event_loop.create_window(
             Window::default_attributes()
                 .with_title("OCR Overlay")
                 .with_skip_taskbar(true)
@@ -68,12 +80,21 @@ impl ApplicationHandler for App {
                 .with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))))
                 .with_resizable(false)
                 .with_window_level(WindowLevel::AlwaysOnTop)
-        ).unwrap()));
+        ).unwrap());
 
-        let context = softbuffer::Context::new(self.window.clone().unwrap()).unwrap();
-        let surface = softbuffer::Surface::new(&context, self.window.clone().unwrap()).unwrap();
-
-        self.surface = Some(surface);
+        let (width, height) = {
+            let window = self.window.as_ref().unwrap();
+            let window_size = window.inner_size();
+            (window_size.width, window_size.height)
+        };
+        self.size = (width, height);
+        
+        let surface_texture = SurfaceTexture::new(
+            width, height,
+            self.window.as_ref().unwrap()
+        );
+        self.pixels = Some(Pixels::new(width, height, surface_texture).expect("Unable to create pixel buffer"));
+        self.pixels.as_mut().unwrap().clear_color(pixels::wgpu::Color::TRANSPARENT);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -90,9 +111,9 @@ impl ApplicationHandler for App {
                 // the program to gracefully handle redraws requested by the OS.
 
                 // Only draw if the current selection has changed
-                if self.last_selection != self.current_selection {
+                if self.last_selection.is_none() || self.last_selection.unwrap() != self.current_selection {
                     draw(self);
-                    self.last_selection = self.current_selection;
+                    self.last_selection = Some(self.current_selection);
                     
                     // Queue a RedrawRequested event.
                     //
@@ -116,41 +137,33 @@ impl ApplicationHandler for App {
 }
 
 fn draw(app: &mut App) {
-    println!("Drawing window");
-
-    if app.surface.is_none() || app.window.is_none() {
+    if app.pixels.is_none() || app.window.is_none() {
         return;
     }
 
-    let window = app.window.as_ref().unwrap();
-    let surface = app.surface.as_mut().unwrap();
+    let pixels = app.pixels.as_mut().unwrap();
+    let frame = pixels.frame_mut();
+    let (width, height) = app.size;
 
-    // Draw the application.
-    //
-    // This is called when the application is ready to draw and is the place to put the code
-    // to draw the application. This is called after the RedrawRequested event is received.
-    let (width, height) = {
-        let size = window.inner_size();
-        (size.width, size.height)
-    };
-    surface
-        .resize(
-            NonZeroU32::new(width).unwrap(),
-            NonZeroU32::new(height).unwrap(),
-        )
-        .unwrap();
+    println!("Drawing window");
 
-    let mut buffer = surface.buffer_mut().unwrap();
-    // for index in 0..(width * height) {
-    //     let y = index / width;
-    //     let x = index % width;
-    //     let red = x % 255;
-    //     let green = y % 255;
-    //     let blue = (x * y) % 255;
+    for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
+        let x = (i % width as usize) as i32;
+        let y = (i / height as usize) as i32;
 
-    //     buffer[index as usize] = blue | (green << 8) | (red << 16);
-    // }
-    buffer.fill(0xFF181818);
+        let inside_the_box = x >= app.current_selection.x
+            && x < app.current_selection.x + app.current_selection.width
+            && y >= app.current_selection.y
+            && y < app.current_selection.y + app.current_selection.height;
 
-    buffer.present().unwrap();
+        let rgba = if inside_the_box {
+            [0x5e, 0x48, 0xe8, 0x50]
+        } else {
+            [0x48, 0xb2, 0xe8, 0x50]
+        };
+
+        pixel.copy_from_slice(&rgba);
+    }
+
+    pixels.render().expect("Unable to render pixels");
 }
