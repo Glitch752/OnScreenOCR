@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 inputbot = "0.6"
+softbuffer = "0.4.4"
 winit = "0.30.3"
