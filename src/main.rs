@@ -3,42 +3,44 @@ use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId, WindowLevel};
-use std::sync::mpsc;
 use std::thread;
-use std::cell::RefCell;
 
 fn main() {
-    let (tx, rx) = mpsc::channel();
+    // Only run event loop on user interaction
+    let event_loop = EventLoop::new().expect("Unable to create event loop");
+    event_loop.set_control_flow(ControlFlow::Wait);
 
+    let loop_proxy = event_loop.create_proxy();
     TKey.bind(move || {
-        if LShiftKey.is_pressed() && LSuper.is_pressed() {
+        if LShiftKey.is_pressed() && LAltKey.is_pressed() {
             // We need to open the window on the main thread
-            tx.send(()).unwrap();
+            loop_proxy.send_event(()).expect("Unable to send event");
         }
     });
 
-    thread::spawn(move || {
+    thread::spawn(|| {
         inputbot::handle_input_events();
     });
-    
-    println!("Listening for keybinds");
 
-    // Only run event loop on user interaction
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
-    for _ in rx {
-        println!("Opening OCR overlay");
-        open_ocr_overlay(event_loop);
-    }
+    println!("Listening for keybinds");
+    event_loop.run_app(&mut App::default()).expect("Unable to run event loop");
 }
 
 #[derive(Default)]
 struct App {
-    window: Option<Window>,
+    window: Option<Window>
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
+        if self.window.is_some() {
+            // There's already a window open; do nothing.
+            return;
+        }
+
         self.window = Some(event_loop.create_window(
             Window::default_attributes()
                 .with_title("OCR Overlay")
@@ -64,7 +66,7 @@ impl ApplicationHandler for App {
                 // this event rather than in AboutToWait, since rendering in here allows
                 // the program to gracefully handle redraws requested by the OS.
 
-                // Draw.
+                draw(self);
 
                 // Queue a RedrawRequested event.
                 //
@@ -73,12 +75,18 @@ impl ApplicationHandler for App {
                 // can render here instead.
                 self.window.as_ref().unwrap().request_redraw();
             },
+            WindowEvent::MouseInput { device_id, state, button } => {
+                // Handle mouse input.
+                println!("Mouse input: {:?} {:?} {:?}", device_id, state, button);
+            },
             _ => (),
         }
     }
 }
 
-fn open_ocr_overlay(event_loop: EventLoop<()>) {
-    let mut app = App::default();
-    event_loop.run_app(&mut app);
+fn draw(app: &mut App) {
+    // Draw the application.
+    //
+    // This is called when the application is ready to draw and is the place to put the code
+    // to draw the application. This is called after the RedrawRequested event is received.
 }
