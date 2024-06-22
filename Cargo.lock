@@ -9,7 +9,6 @@ dependencies = [
  "inputbot",
  "pixels",
  "raqote",
- "winapi",
  "winit",
 ]
 

@@ -1,5 +1,4 @@
-use inputbot::KeybdKey::*;
-use pixels::raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use inputbot::{KeybdKey::*, MouseCursor};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -9,15 +8,13 @@ use winit::window::{Window, WindowId, WindowLevel, Fullscreen};
 use std::thread;
 use pixels::{Pixels, SurfaceTexture};
 
-use winapi::shared::windef::HWND;
-
 fn main() {
     // Only run event loop on user interaction
     let event_loop = EventLoop::new().expect("Unable to create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let loop_proxy = event_loop.create_proxy();
-    TKey.bind(move || {
+    ZKey.bind(move || {
         if LShiftKey.is_pressed() && LAltKey.is_pressed() {
             // We need to open the window on the main thread
             loop_proxy.send_event(()).expect("Unable to send event");
@@ -37,7 +34,9 @@ struct Selection {
     x: i32,
     y: i32,
     width: i32,
-    height: i32
+    height: i32,
+
+    mouse_down: bool,
 }
 
 impl Default for Selection {
@@ -46,7 +45,8 @@ impl Default for Selection {
             x: 300,
             y: 300,
             width: 500,
-            height: 500
+            height: 500,
+            mouse_down: false,
         }
     }
 }
@@ -58,46 +58,49 @@ struct App {
 
     size: (u32, u32),
 
-    current_selection: Selection
+    current_selection: Selection,
 }
 
 impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.window = Some(event_loop.create_window(
-            Window::default_attributes()
-                .with_title("OCR Overlay")
-                .with_skip_taskbar(true)
-                .with_transparent(true)
-                .with_decorations(false)
-                .with_fullscreen(Some(Fullscreen::Borderless(None)))
-                .with_resizable(false)
-                .with_window_level(WindowLevel::AlwaysOnTop)
-        ).unwrap());
-
-        let (width, height) = {
-            let window = self.window.as_ref().unwrap();
-            let window_size = window.inner_size();
-            (window_size.width, window_size.height)
-        };
-        self.size = (width, height);
-        
-        self.window.as_mut().unwrap().set_minimized(true);
-        
-        let surface_texture = SurfaceTexture::new(
-            width, height,
-            self.window.as_ref().unwrap()
-        );
-        self.pixels = Some(Pixels::new(width, height, surface_texture).expect("Unable to create pixel buffer"));
-        self.pixels.as_mut().unwrap().clear_color(pixels::wgpu::Color::TRANSPARENT);
-        
-        self.window.as_ref().unwrap().request_redraw();
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
-        let window = self.window.as_mut().unwrap();
-        window.set_minimized(false);
-        window.focus_window();
-        window.request_redraw();
+        if self.window.is_none() {
+            // Create the window
+            self.window = Some(event_loop.create_window(
+                Window::default_attributes()
+                    .with_title("OCR Overlay")
+                    .with_skip_taskbar(true)
+                    .with_transparent(true)
+                    .with_decorations(false)
+                    .with_fullscreen(Some(Fullscreen::Borderless(None)))
+                    .with_resizable(false)
+                    .with_window_level(WindowLevel::AlwaysOnTop)
+            ).unwrap());
+
+            let (width, height) = {
+                let window = self.window.as_ref().unwrap();
+                let window_size = window.inner_size();
+                (window_size.width, window_size.height)
+            };
+            self.size = (width, height);
+            
+            let window = self.window.as_ref().unwrap();
+
+            let surface_texture = SurfaceTexture::new(
+                width, height,
+                window
+            );
+            self.pixels = Some(Pixels::new(width, height, surface_texture).expect("Unable to create pixel buffer"));
+            self.pixels.as_mut().unwrap().clear_color(pixels::wgpu::Color::TRANSPARENT);
+        } else {
+            // Show the window
+            let window = self.window.as_mut().unwrap();
+            window.set_minimized(false);
+            window.focus_window();
+            window.request_redraw();
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -123,10 +126,6 @@ impl ApplicationHandler for App {
                 // Only draw if the current selection has changed
                 draw(self);
             },
-            WindowEvent::MouseInput { device_id, state, button } => {
-                // Handle mouse input.
-                println!("Mouse input: {:?} {:?} {:?}", device_id, state, button);
-            },
             #[allow(unused)]
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                 if self.window.is_none() {
@@ -141,6 +140,41 @@ impl ApplicationHandler for App {
                     _ => (),
                 }
             },
+            #[allow(unused)]
+            WindowEvent::MouseInput { device_id, state, button } => {
+                match button {
+                    winit::event::MouseButton::Left => {
+                        if state == winit::event::ElementState::Pressed {
+                            let (x, y) = MouseCursor::pos();
+                            self.current_selection.x = x;
+                            self.current_selection.y = y;
+                            self.current_selection.width = 0;
+                            self.current_selection.height = 0;
+                            self.current_selection.mouse_down = true;
+                        } else {
+                            self.current_selection.mouse_down = false;
+                        }
+                        self.window.as_ref().unwrap().request_redraw();
+                    },
+                    _ => (),
+                }
+            },
+            #[allow(unused)]
+            WindowEvent::CursorMoved { device_id, position } => {
+                if self.window.is_none() {
+                    return; // Probably shouldn't happen; just in case
+                }
+
+                if(!self.current_selection.mouse_down) {
+                    return;
+                }
+                
+                let (x, y) = MouseCursor::pos();
+                self.current_selection.width = x - self.current_selection.x;
+                self.current_selection.height = y - self.current_selection.y;
+
+                self.window.as_ref().unwrap().request_redraw();
+            }
             _ => (),
         }
     }
@@ -160,11 +194,23 @@ fn draw(app: &mut App) {
     for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
         let x = (i % width as usize) as i32;
         let y = (i / height as usize) as i32;
+        
+        let Selection { x: mut selX, y: mut selY, mut width, mut height, .. } = app.current_selection;
+        if width < 0 {
+            selX += width;
+            selX = selX.max(0);
+            width = -width;
+        }
+        if height < 0 {
+            selY += height;
+            selY = selY.max(0);
+            height = -height;
+        }
 
-        let inside_the_box = x >= app.current_selection.x
-            && x < app.current_selection.x + app.current_selection.width
-            && y >= app.current_selection.y
-            && y < app.current_selection.y + app.current_selection.height;
+        let inside_the_box = x >= selX
+            && x < selX + width
+            && y >= selY
+            && y < selY + height;
 
         let rgba = if inside_the_box {
             [0x0, 0x0, 0x0, 0x0]
@@ -175,5 +221,6 @@ fn draw(app: &mut App) {
         pixel.copy_from_slice(&rgba);
     }
 
+    app.window.as_ref().unwrap().pre_present_notify();
     pixels.render().expect("Unable to render pixels");
 }
