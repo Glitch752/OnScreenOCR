@@ -1,0 +1,8 @@
+[package]
+name = "BetterOCRTool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+inputbot = "0.6"
+winit = "0.30.3"
