@@ -12,7 +12,7 @@ impl Default for Selection {
     fn default() -> Self {
         Selection {
             x: 300,
-            y: 300,
+            y: 0,
             width: 500,
             height: 500,
             mouse_down: false,

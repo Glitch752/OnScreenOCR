@@ -1,4 +1,5 @@
 use inputbot::{KeybdKey::*, MouseCursor};
+use screenshot::get_screenshot;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -11,6 +12,7 @@ use selection::Selection;
 
 mod renderer;
 mod selection;
+mod screenshot;
 
 fn main() {
     // Only run event loop on user interaction
@@ -75,7 +77,7 @@ impl ApplicationHandler for App {
             );
 
             let mut pixels = Pixels::new(width, height, surface_texture).expect("Unable to create pixel buffer");
-            pixels.clear_color(pixels::wgpu::Color::GREEN);
+            pixels.clear_color(pixels::wgpu::Color::WHITE);
 
             let shader_renderer = renderer::Renderer::new(&pixels, width, height).expect("Unable to create shader renderer");
 
@@ -86,7 +88,15 @@ impl ApplicationHandler for App {
             });
         } else {
             // Show the window
-            let window = &self.window_state.as_mut().unwrap().window;
+            let window_state = self.window_state.as_mut().unwrap();
+            let window = &window_state.window;
+            let pixels = &window_state.pixels;
+            let shader_renderer = &mut window_state.shader_renderer;
+            let result = shader_renderer.write_screenshot_to_texture(pixels, get_screenshot());
+            if result.is_err() {
+                println!("Error writing screenshot to texture: {:?}", result);
+            }
+
             window.set_minimized(false);
             window.focus_window();
             window.request_redraw();
@@ -118,8 +128,6 @@ impl ApplicationHandler for App {
                 let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
-                    let texture = shader_renderer.texture_view();
-                    context.scaling_renderer.render(encoder, texture);
                     shader_renderer.render(encoder, render_target, context.scaling_renderer.clip_rect());
 
                     Ok(())

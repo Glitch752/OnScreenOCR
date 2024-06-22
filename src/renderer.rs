@@ -4,7 +4,7 @@ use pixels::{
     TextureError,
 };
 
-use crate::selection::{Selection};
+use crate::{screenshot::Screenshot, selection::Selection};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -33,6 +33,7 @@ impl Locals {
 
 #[allow(dead_code)] // Many of these fields are actually used
 pub(crate) struct Renderer {
+    texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -52,9 +53,8 @@ impl Renderer {
         let shader = wgpu::include_wgsl!("./shader.wgsl");
         let module = device.create_shader_module(shader);
 
-        // Create a texture view that will be used as input
-        // This will be used as the render target for the default scaling renderer
-        let texture_view = create_texture_view(pixels, width, height)?;
+        let texture = create_texture(pixels, width, height)?;
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Create a texture sampler with nearest neighbor
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -176,6 +176,7 @@ impl Renderer {
         });
 
         Ok(Self {
+            texture,
             texture_view,
             sampler,
             bind_group_layout,
@@ -186,8 +187,32 @@ impl Renderer {
         })
     }
 
-    pub(crate) fn texture_view(&self) -> &wgpu::TextureView {
-        &self.texture_view
+    pub(crate) fn write_screenshot_to_texture(
+        &mut self,
+        pixels: &pixels::Pixels,
+        screenshot: Screenshot
+    ) -> Result<(), TextureError> {
+        pixels.queue().write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            screenshot.bytes.as_slice(),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * 256),
+                rows_per_image: Some(256),
+            },
+            wgpu::Extent3d {
+                width: screenshot.width as u32,
+                height: screenshot.height as u32,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        Ok(())
     }
 
     pub(crate) fn resize(
@@ -196,7 +221,9 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<(), TextureError> {
-        self.texture_view = create_texture_view(pixels, width, height)?;
+        self.texture = create_texture(pixels, width, height)?;
+        self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        
         self.bind_group = create_bind_group(
             pixels.device(),
             &self.bind_group_layout,
@@ -238,11 +265,11 @@ impl Renderer {
     }
 }
 
-fn create_texture_view(
+fn create_texture(
     pixels: &pixels::Pixels,
     width: u32,
     height: u32,
-) -> Result<wgpu::TextureView, TextureError> {
+) -> Result<wgpu::Texture, TextureError> {
     let device = pixels.device();
     check_texture_size(device, width, height)?;
     let texture_descriptor = wgpu::TextureDescriptor {
@@ -260,9 +287,7 @@ fn create_texture_view(
         view_formats: &[],
     };
 
-    Ok(device
-        .create_texture(&texture_descriptor)
-        .create_view(&wgpu::TextureViewDescriptor::default()))
+    Ok(device.create_texture(&texture_descriptor))
 }
 
 fn create_bind_group(

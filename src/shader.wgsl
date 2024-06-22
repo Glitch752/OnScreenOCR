@@ -27,26 +27,13 @@ struct Locals {
 }
 @group(0) @binding(2) var<uniform> r_locals: Locals;
 
-const tau = 6.283185307179586476925286766559;
-const bias = 0.2376; // Offset the circular time input so it is never 0
-
-// Random functions based on https://thebookofshaders.com/10/
-const random_scale = 43758.5453123;
-const random_x = 12.9898;
-const random_y = 78.233;
-
-fn random(x: f32) -> f32 {
-    return fract(sin(x) * random_scale);
-}
-
-fn random_vec2(st: vec2<f32>) -> f32 {
-    return random(dot(st, vec2<f32>(random_x, random_y)));
-}
-
 @fragment
-fn fs_main(@location(0) tex_coord: vec2<f32>) -> @location(0) vec4<f32> {
+fn fs_main(
+    @location(0) tex_coord: vec2<f32>
+) -> @location(0) vec4<f32> {
     let sampled_color = textureSample(r_tex_color, r_tex_sampler, tex_coord);
-    let noise_color = vec3<f32>(random_vec2(tex_coord.xy * vec2<f32>((r_locals.x / 100.) % tau + bias)));
+    // let noise_color = vec3<f32>(random_vec2(tex_coord.xy * vec2<f32>((r_locals.x / 100.) % tau + bias)));
+    let noise_color = vec3<f32>(r_locals.x / 1000., r_locals.y / 1000., 0.0);
 
     return vec4<f32>(sampled_color.rgb * noise_color, sampled_color.a);
 }
