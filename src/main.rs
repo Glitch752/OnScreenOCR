@@ -7,7 +7,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Window, WindowId, WindowLevel, Fullscreen};
 use std::thread;
-use pixels::{Pixels, SurfaceTexture};
+use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use selection::Selection;
 
 mod renderer;
@@ -76,8 +76,10 @@ impl ApplicationHandler for App {
                 &window
             );
 
-            let mut pixels = Pixels::new(width, height, surface_texture).expect("Unable to create pixel buffer");
-            pixels.clear_color(pixels::wgpu::Color::WHITE);
+            let builder = PixelsBuilder::new(width, height, surface_texture);
+            let builder = builder.clear_color(pixels::wgpu::Color::WHITE);
+            let builder = builder.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb);
+            let pixels = builder.build().expect("Unable to create pixels");
 
             let shader_renderer = renderer::Renderer::new(&pixels, width, height).expect("Unable to create shader renderer");
 

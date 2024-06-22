@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use pixels::{
     check_texture_size,
     wgpu::{self, util::DeviceExt},
@@ -197,13 +199,13 @@ impl Renderer {
                 texture: &self.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
+                aspect: wgpu::TextureAspect::All
             },
             screenshot.bytes.as_slice(),
             wgpu::ImageDataLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * 256),
-                rows_per_image: Some(256),
+                bytes_per_row: Some(screenshot.width as u32 * 4),
+                rows_per_image: Some(screenshot.height as u32),
             },
             wgpu::Extent3d {
                 width: screenshot.width as u32,
