@@ -1,5 +1,5 @@
 use inputbot::{KeybdKey::*, MouseCursor};
-use screenshot::get_screenshot;
+use screenshot::screenshot_primary;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -81,7 +81,11 @@ impl ApplicationHandler for App {
             let builder = builder.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb);
             let pixels = builder.build().expect("Unable to create pixels");
 
-            let shader_renderer = renderer::Renderer::new(&pixels, width, height).expect("Unable to create shader renderer");
+            let mut shader_renderer = renderer::Renderer::new(&pixels, width, height).expect("Unable to create shader renderer");
+            let result = shader_renderer.write_screenshot_to_texture(&pixels, screenshot_primary());
+            if result.is_err() {
+                println!("Error writing screenshot to texture: {:?}", result);
+            }
 
             self.window_state = Some(WindowState {
                 window,
@@ -94,7 +98,7 @@ impl ApplicationHandler for App {
             let window = &window_state.window;
             let pixels = &window_state.pixels;
             let shader_renderer = &mut window_state.shader_renderer;
-            let result = shader_renderer.write_screenshot_to_texture(pixels, get_screenshot());
+            let result = shader_renderer.write_screenshot_to_texture(pixels, screenshot_primary());
             if result.is_err() {
                 println!("Error writing screenshot to texture: {:?}", result);
             }

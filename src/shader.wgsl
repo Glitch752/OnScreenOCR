@@ -33,7 +33,7 @@ fn fs_main(
 ) -> @location(0) vec4<f32> {
     let sampled_color = textureSample(r_tex_color, r_tex_sampler, tex_coord);
     // let noise_color = vec3<f32>(random_vec2(tex_coord.xy * vec2<f32>((r_locals.x / 100.) % tau + bias)));
-    let noise_color = vec3<f32>(r_locals.x / 1000., r_locals.y / 1000., 0.0);
+    let noise_color = vec3<f32>(tex_coord, 0.0);
 
     return vec4<f32>(sampled_color.rgb * noise_color, sampled_color.a);
 }
