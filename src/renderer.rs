@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use pixels::{
     check_texture_size,
     wgpu::{self, util::DeviceExt},
@@ -14,11 +12,12 @@ pub(crate) struct Locals {
     x: f32,
     y: f32,
     width: f32,
-    height: f32
+    height: f32,
+    blur_enabled: u32
 }
 
 impl Locals {
-    pub(crate) fn new(selection: Selection, window_size: (u32, u32)) -> Self {
+    pub(crate) fn new(selection: Selection, window_size: (u32, u32), blur_enabled: bool) -> Self {
         let (window_width, window_height) = (window_size.0 as f32, window_size.1 as f32);
         let (mut selection_width, mut selection_height) = (selection.width as f32, selection.height as f32);
         let (mut selection_x, mut selection_y) = (selection.x as f32, selection.y as f32);
@@ -37,7 +36,8 @@ impl Locals {
             x:      selection_x / window_width,
             y:      selection_y / window_height,
             width:  selection_width / window_width,
-            height: selection_height / window_height
+            height: selection_height / window_height,
+            blur_enabled: if blur_enabled { 1 } else { 0 }
         }
     }
 
@@ -53,7 +53,8 @@ impl Default for Locals {
             x: 0.25,
             y: 0.25,
             width: 0.5,
-            height: 0.5
+            height: 0.5,
+            blur_enabled: 0
         }
     }
 }

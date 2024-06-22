@@ -138,7 +138,7 @@ impl ApplicationHandler for App {
                 let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
-                    shader_renderer.update(&context.queue, Locals::new(self.current_selection, self.size));
+                    shader_renderer.update(&context.queue, Locals::new(self.current_selection, self.size, false));
                     shader_renderer.render(encoder, render_target, context.scaling_renderer.clip_rect());
 
                     Ok(())
