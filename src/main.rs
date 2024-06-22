@@ -1,4 +1,5 @@
 use inputbot::{KeybdKey::*, MouseCursor};
+use renderer::Locals;
 use screenshot::screenshot_primary;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -54,6 +55,9 @@ impl ApplicationHandler for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
         if self.window_state.is_none() {
+            // Need to screenshot before the window is visible
+            let screenshot = screenshot_primary();
+
             // Create the window
             let window = event_loop.create_window(
                 Window::default_attributes()
@@ -82,7 +86,7 @@ impl ApplicationHandler for App {
             let pixels = builder.build().expect("Unable to create pixels");
 
             let mut shader_renderer = renderer::Renderer::new(&pixels, width, height).expect("Unable to create shader renderer");
-            let result = shader_renderer.write_screenshot_to_texture(&pixels, screenshot_primary());
+            let result = shader_renderer.write_screenshot_to_texture(&pixels, screenshot);
             if result.is_err() {
                 println!("Error writing screenshot to texture: {:?}", result);
             }
@@ -134,6 +138,7 @@ impl ApplicationHandler for App {
                 let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
+                    shader_renderer.update(&context.queue, Locals::new(self.current_selection, self.size));
                     shader_renderer.render(encoder, render_target, context.scaling_renderer.clip_rect());
 
                     Ok(())

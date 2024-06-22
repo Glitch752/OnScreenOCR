@@ -18,18 +18,43 @@ pub(crate) struct Locals {
 }
 
 impl Locals {
-    pub(crate) fn new(selection: Selection) -> Self {
+    pub(crate) fn new(selection: Selection, window_size: (u32, u32)) -> Self {
+        let (window_width, window_height) = (window_size.0 as f32, window_size.1 as f32);
+        let (mut selection_width, mut selection_height) = (selection.width as f32, selection.height as f32);
+        let (mut selection_x, mut selection_y) = (selection.x as f32, selection.y as f32);
+
+        // Ensure dimensions are positive
+        if selection_width < 0.0 {
+            selection_x += selection_width;
+            selection_width = -selection_width;
+        }
+        if selection_height < 0.0 {
+            selection_y += selection_height;
+            selection_height = -selection_height;
+        }
+
         Self {
-            x: selection.x as f32,
-            y: selection.y as f32,
-            width: selection.width as f32,
-            height: selection.height as f32
+            x:      selection_x / window_width,
+            y:      selection_y / window_height,
+            width:  selection_width / window_width,
+            height: selection_height / window_height
         }
     }
 
     #[allow(dead_code)] // It is actually used... not sure what the warning is about
     pub(crate) fn to_bytes(&self) -> &[u8] {
         bytemuck::bytes_of(self)
+    }
+}
+
+impl Default for Locals {
+    fn default() -> Self {
+        Self {
+            x: 0.25,
+            y: 0.25,
+            width: 0.5,
+            height: 0.5
+        }
     }
 }
 
@@ -101,7 +126,7 @@ impl Renderer {
         // Create uniform buffer
         let locals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Renderer u_Locals"),
-            contents: bytemuck::bytes_of(&Locals::new(Selection::default())),
+            contents: bytemuck::bytes_of(&Locals::default()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 

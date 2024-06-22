@@ -31,9 +31,13 @@ struct Locals {
 fn fs_main(
     @location(0) tex_coord: vec2<f32>
 ) -> @location(0) vec4<f32> {
-    let sampled_color = textureSample(r_tex_color, r_tex_sampler, tex_coord);
-    // let noise_color = vec3<f32>(random_vec2(tex_coord.xy * vec2<f32>((r_locals.x / 100.) % tau + bias)));
-    let noise_color = vec3<f32>(tex_coord, 0.0);
+    let in_box_color = textureSample(r_tex_color, r_tex_sampler, tex_coord);
+    let out_of_box_color = vec3<f32>(tex_coord, 0.0);
+    let in_box =
+        step(r_locals.x, tex_coord.x) *
+        step(r_locals.y, tex_coord.y) *
+        step(tex_coord.x, r_locals.x + r_locals.width) *
+        step(tex_coord.y, r_locals.y + r_locals.height);
 
-    return vec4<f32>(sampled_color.rgb * noise_color, sampled_color.a);
+    return vec4<f32>(mix(out_of_box_color.rgb, in_box_color.rgb, in_box * 0.5 + 0.5), 1.0);
 }
