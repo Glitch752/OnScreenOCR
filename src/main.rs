@@ -1,11 +1,15 @@
 use inputbot::KeybdKey::*;
+use pixels::raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Window, WindowId, WindowLevel, Fullscreen};
 use std::thread;
 use pixels::{Pixels, SurfaceTexture};
+
+use winapi::shared::windef::HWND;
 
 fn main() {
     // Only run event loop on user interaction
@@ -39,10 +43,10 @@ struct Selection {
 impl Default for Selection {
     fn default() -> Self {
         Selection {
-            x: 100,
-            y: 100,
-            width: 200,
-            height: 200
+            x: 300,
+            y: 300,
+            width: 500,
+            height: 500
         }
     }
 }
@@ -54,30 +58,18 @@ struct App {
 
     size: (u32, u32),
 
-    last_selection: Option<Selection>,
     current_selection: Selection
 }
 
 impl ApplicationHandler for App {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-    }
-
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
-        if self.window.is_some() {
-            // There's already a window open; do nothing.
-            return;
-        }
-
-        // TODO: Use the monitor that the mouse is currently on
-        let monitor = event_loop.primary_monitor().unwrap();
-
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.window = Some(event_loop.create_window(
             Window::default_attributes()
                 .with_title("OCR Overlay")
                 .with_skip_taskbar(true)
                 .with_transparent(true)
                 .with_decorations(false)
-                .with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))))
+                .with_fullscreen(Some(Fullscreen::Borderless(None)))
                 .with_resizable(false)
                 .with_window_level(WindowLevel::AlwaysOnTop)
         ).unwrap());
@@ -89,12 +81,23 @@ impl ApplicationHandler for App {
         };
         self.size = (width, height);
         
+        self.window.as_mut().unwrap().set_minimized(true);
+        
         let surface_texture = SurfaceTexture::new(
             width, height,
             self.window.as_ref().unwrap()
         );
         self.pixels = Some(Pixels::new(width, height, surface_texture).expect("Unable to create pixel buffer"));
         self.pixels.as_mut().unwrap().clear_color(pixels::wgpu::Color::TRANSPARENT);
+        
+        self.window.as_ref().unwrap().request_redraw();
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
+        let window = self.window.as_mut().unwrap();
+        window.set_minimized(false);
+        window.focus_window();
+        window.request_redraw();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -109,28 +112,35 @@ impl ApplicationHandler for App {
                 // It's preferable for applications that do not render continuously to render in
                 // this event rather than in AboutToWait, since rendering in here allows
                 // the program to gracefully handle redraws requested by the OS.
+                if self.window.is_none() {
+                    return;
+                }
+                let window = self.window.as_ref().unwrap();
+                if window.is_minimized().unwrap_or(false) {
+                    return;
+                }
 
                 // Only draw if the current selection has changed
-                if self.last_selection.is_none() || self.last_selection.unwrap() != self.current_selection {
-                    draw(self);
-                    self.last_selection = Some(self.current_selection);
-                    
-                    // Queue a RedrawRequested event.
-                    //
-                    // You only need to call this if you've determined that you need to redraw in
-                    // applications which do not always need to. Applications that redraw continuously
-                    // can render here instead.
-                    self.window.as_ref().unwrap().request_redraw();
-                }
+                draw(self);
             },
             WindowEvent::MouseInput { device_id, state, button } => {
                 // Handle mouse input.
                 println!("Mouse input: {:?} {:?} {:?}", device_id, state, button);
             },
+            #[allow(unused)]
             WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
-                // Handle keyboard input.
-                println!("Keyboard input: {:?} {:?} {:?}", device_id, event, is_synthetic);
-            }
+                if self.window.is_none() {
+                    return; // Probably shouldn't happen; just in case
+                }
+                let window = self.window.as_ref().unwrap();
+
+                match event.logical_key {
+                    Key::Named(NamedKey::Escape) => {
+                        window.set_minimized(true);
+                    },
+                    _ => (),
+                }
+            },
             _ => (),
         }
     }
@@ -157,7 +167,7 @@ fn draw(app: &mut App) {
             && y < app.current_selection.y + app.current_selection.height;
 
         let rgba = if inside_the_box {
-            [0x5e, 0x48, 0xe8, 0x50]
+            [0x0, 0x0, 0x0, 0x0]
         } else {
             [0x48, 0xb2, 0xe8, 0x50]
         };
