@@ -1,7 +1,6 @@
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::OCRHandler;
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
-use renderer::Locals;
 use screenshot::screenshot_primary;
 use selection::Selection;
 use std::thread;
@@ -153,8 +152,12 @@ impl ApplicationHandler for App {
                 self.ocr_handler.update_ocr_preview_text();
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
-                    shader_renderer
-                        .update(&context.device, &context.queue, Locals::new(self.selection, self.size, true), self.ocr_handler.ocr_preview_text.clone());
+                    shader_renderer.update(
+                        context,
+                        self.size,
+                        self.selection,
+                        self.ocr_handler.ocr_preview_text.clone()
+                    );
                     shader_renderer.render(
                         encoder,
                         render_target,

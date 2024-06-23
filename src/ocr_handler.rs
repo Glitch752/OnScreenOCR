@@ -95,6 +95,10 @@ impl OCRHandler {
 }
 
 fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender<String>) {
+    if bounds.width < 5 || bounds.height < 5 {
+        return;
+    }
+
     // Get the current screenshot
     let screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot").clone().expect("No screenshot available");
     

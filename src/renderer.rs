@@ -1,10 +1,8 @@
 use pixels::{
-    check_texture_size,
-    wgpu::{self, util::DeviceExt},
-    TextureError,
+    check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
 };
 use glyph_brush::{Text, Section as TextSection};
-use crate::wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush};
+use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush}};
 
 use crate::{screenshot::Screenshot, selection::Selection};
 
@@ -68,6 +66,7 @@ pub(crate) struct Renderer {
     vertex_buffer: wgpu::Buffer,
 
     text_brush: TextBrush<FontRef<'static>>,
+    should_render_text: bool
 }
 
 impl Renderer {
@@ -215,8 +214,9 @@ impl Renderer {
                 device,
                 width,
                 height,
-                wgpu::TextureFormat::Rgba8Uint
+                wgpu::TextureFormat::Bgra8UnormSrgb
             ),
+            should_render_text: false
         })
     }
 
@@ -271,11 +271,58 @@ impl Renderer {
         Ok(())
     }
 
-    pub(crate) fn update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, locals: Locals, ocr_preview_text: Option<String>) {
+    fn get_preview_text_placement(
+        &self,
+        window_size: (u32, u32),
+        bounds: Bounds
+    ) -> Option<(f32, f32, glyph_brush::HorizontalAlign)> {
+        let bounds = bounds.to_positive_size();
+        if bounds.width == 0 || bounds.height == 0 {
+            return None;
+        }
+
+        let left_side_space = bounds.x;
+        let right_side_space = window_size.0 as i32 - (bounds.x + bounds.width);
+
+        if left_side_space > right_side_space {
+            Some((bounds.x as f32, bounds.y as f32, glyph_brush::HorizontalAlign::Right))
+        } else {
+            Some(((bounds.x + bounds.width) as f32, bounds.y as f32, glyph_brush::HorizontalAlign::Left))
+        }
+    }
+
+    pub(crate) fn update(
+        &mut self,
+        context: &PixelsContext,
+        window_size: (u32, u32),
+        selection: Selection,
+        ocr_preview_text: Option<String>
+    ) {
+        let device = &context.device;
+        let queue = &context.queue;
+
+        let locals = Locals::new(selection, window_size, true);
+
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
 
-        let text = ocr_preview_text.unwrap_or_default();
-        let section = TextSection::default().add_text(Text::new(&text).with_color([0.0, 0.0, 0.0, 1.0]));
+        self.should_render_text = false;
+        if ocr_preview_text.is_none() {
+            return;
+        }
+
+        let text = ocr_preview_text.unwrap();
+        let placement = self.get_preview_text_placement(window_size, selection.bounds);
+        if placement.is_none() {
+            return;
+        }
+        let placement = placement.unwrap();
+
+        self.should_render_text = true;
+
+        let section = TextSection::default()
+            .add_text(Text::new(&text).with_color([1.0, 1.0, 1.0, 1.0]).with_scale(20.0))
+            .with_screen_position((placement.0, placement.1))
+            .with_layout(glyph_brush::Layout::default().h_align(placement.2));
         self.text_brush.queue(device, queue, vec![&section]).unwrap();
     }
 
@@ -297,14 +344,14 @@ impl Renderer {
             })],
             depth_stencil_attachment: None,
         });
-        
-        self.text_brush.draw(&mut rpass);
 
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_scissor_rect(clip_rect.0, clip_rect.1, clip_rect.2, clip_rect.3);
         rpass.draw(0..3, 0..1);
+        
+        self.text_brush.draw(&mut rpass);
     }
 }
 
