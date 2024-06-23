@@ -61,6 +61,7 @@ impl ApplicationHandler for App {
         if self.window_state.is_none() {
             // Need to screenshot before the window is visible
             let screenshot = screenshot_primary();
+            self.ocr_handler.set_screenshot(screenshot.clone());
 
             // Create the window
             let window = event_loop
@@ -107,7 +108,10 @@ impl ApplicationHandler for App {
             let window = &window_state.window;
             let pixels = &window_state.pixels;
             let shader_renderer = &mut window_state.shader_renderer;
-            let result = shader_renderer.write_screenshot_to_texture(pixels, screenshot_primary());
+            
+            let screenshot = screenshot_primary();
+            self.ocr_handler.set_screenshot(screenshot.clone());
+            let result = shader_renderer.write_screenshot_to_texture(pixels, screenshot);
             if result.is_err() {
                 println!("Error writing screenshot to texture: {:?}", result);
             }

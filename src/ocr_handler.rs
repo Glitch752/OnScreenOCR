@@ -1,7 +1,6 @@
 use debounce::EventDebouncer;
-use image::{GenericImageView, ImageBuffer, Rgba};
-use std::{sync::{Mutex, LazyLock}, time::Duration};
-use std::sync::mpsc;
+use image::{GenericImage, ImageBuffer, Pixel, Rgba};
+use std::{sync::{LazyLock, Mutex}, time::Duration};
 
 use crate::{screenshot::Screenshot, selection::{Bounds, Selection}};
 
@@ -23,22 +22,23 @@ impl PartialEq for OCREvent {
 }
 
 pub(crate) struct OCRHandler {
-    pub debouncer: Option<EventDebouncer<OCREvent>>,
-    pub leptess: leptess::LepTess,
+    pub debouncer: Option<EventDebouncer<OCREvent>>
 }
 
 impl Default for OCRHandler {
     fn default() -> Self {
         OCRHandler {
-            debouncer: None,
-            // TODO: Support for other languages?
-            leptess: leptess::LepTess::new(Some("./tessdata"), "eng")
-                .expect("Unable to create Tesseract instance"),
+            debouncer: None
         }
     }
 }
 
 impl OCRHandler {
+    pub fn set_screenshot(&mut self, screenshot: Screenshot) {
+        let mut current_screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot");
+        *current_screenshot = Box::new(Some(screenshot));
+    }
+
     pub fn selection_changed(&mut self, latest_selection: Selection) {
         if self.debouncer.is_none() {
             self.initialize_debouncer();
@@ -66,18 +66,39 @@ fn perform_ocr(bounds: Bounds) {
     let screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot").clone().expect("No screenshot available");
     
     // Crop the screenshot
-    let img: ImageBuffer<Rgba<_>, Vec<u8>> = image::ImageBuffer::from_raw(
+    let mut img: ImageBuffer<Rgba<_>, Vec<u8>> = image::ImageBuffer::from_raw(
         screenshot.width as u32,
         screenshot.height as u32,
         screenshot.bytes
     ).unwrap();
-    let imageView = img.view(
-        bounds.x as u32,
-        bounds.y as u32,
-        bounds.width as u32,
-        bounds.height as u32
+    let pos_bounds = bounds.to_positive_size();
+    let image_view = img.sub_image(
+        pos_bounds.x as u32,
+        pos_bounds.y as u32,
+        pos_bounds.width as u32,
+        pos_bounds.height as u32
     );
-    let croppedImage = imageView.to_image();
+    let mut cropped_data = image_view.to_image().to_vec().into_iter().collect::<Vec<u8>>();
+    // Enumerate over 4-tuples (x, y, r, g, b)
+    for pixel in cropped_data.chunks_exact_mut(4) {
+        // Image is bgra, so we need to swap r and b
+        pixel.swap(0, 2);
+    }
+    let cropped_image: ImageBuffer<Rgba<_>, Vec<u8>> = image::ImageBuffer::from_vec(
+        pos_bounds.width as u32,
+        pos_bounds.height as u32,
+        cropped_data
+    ).unwrap();
+
     // Export to a png and save it under the current directory
-    croppedImage.save("cropped.png").unwrap();
+    cropped_image.save("cropped.png").unwrap();
+
+    let mut leptess = leptess::LepTess::new(Some("./tessdata"), "eng")
+                .expect("Unable to create Tesseract instance");
+
+    leptess.set_image("cropped.png").expect("Unable to set image");
+    leptess.recognize();
+
+    let text = leptess.get_utf8_text().unwrap();
+    println!("Recognized text: {}", text);
 }
