@@ -14,6 +14,7 @@ winget install LLVM
 
 # To install vcpkg dependencies
 .\vcpkg\bootstrap-vcpkg.bat
+.\vcpkg\vcpkg integrate install
 .\vcpkg\vcpkg install tesseract:x64-windows-static-md
 .\vcpkg\vcpkg install leptonica:x64-windows-static-md
 ```

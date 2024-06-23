@@ -30,7 +30,7 @@ struct Locals {
 
 const BLUR_RADIUS = 2.0;
 const BLUR_ITERATIONS = 2.0;
-const OUT_OF_BOX_TINT = vec3<f32>(0.6, 0.6, 0.65);
+const OUT_OF_BOX_TINT = vec3<f32>(0.5, 0.5, 0.53);
 
 const BORDER_WIDTH = 1.0;
 const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);

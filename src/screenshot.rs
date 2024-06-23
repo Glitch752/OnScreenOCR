@@ -1,5 +1,6 @@
 extern crate libc;
 
+#[derive(Debug, Clone)]
 pub(crate) struct Screenshot {
     pub width: usize,
     pub height: usize,

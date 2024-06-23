@@ -1,21 +1,21 @@
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::OCRHandler;
+use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use renderer::Locals;
 use screenshot::screenshot_primary;
+use selection::Selection;
+use std::thread;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
-use winit::window::{Window, WindowId, WindowLevel, Fullscreen};
-use std::thread;
-use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
-use selection::Selection;
+use winit::window::{Fullscreen, Window, WindowId, WindowLevel};
 
-mod renderer;
-mod selection;
-mod screenshot;
 mod ocr_handler;
+mod renderer;
+mod screenshot;
+mod selection;
 
 fn main() {
     // Only run event loop on user interaction
@@ -35,7 +35,9 @@ fn main() {
     });
 
     println!("Listening for keybinds");
-    event_loop.run_app(&mut App::default()).expect("Unable to run event loop");
+    event_loop
+        .run_app(&mut App::default())
+        .expect("Unable to run event loop");
 }
 
 struct WindowState {
@@ -49,12 +51,11 @@ struct App {
     window_state: Option<WindowState>,
     size: (u32, u32),
     selection: Selection,
-    ocr_handler: OCRHandler
+    ocr_handler: OCRHandler,
 }
 
 impl ApplicationHandler for App {
-    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-    }
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
         if self.window_state.is_none() {
@@ -62,33 +63,34 @@ impl ApplicationHandler for App {
             let screenshot = screenshot_primary();
 
             // Create the window
-            let window = event_loop.create_window(
-                Window::default_attributes()
-                    .with_title("OCR Overlay")
-                    .with_skip_taskbar(true)
-                    .with_decorations(false)
-                    .with_fullscreen(Some(Fullscreen::Borderless(None)))
-                    .with_resizable(false)
-                    .with_window_level(WindowLevel::AlwaysOnTop)
-            ).unwrap();
+            let window = event_loop
+                .create_window(
+                    Window::default_attributes()
+                        .with_title("OCR Overlay")
+                        .with_skip_taskbar(true)
+                        .with_decorations(false)
+                        .with_fullscreen(Some(Fullscreen::Borderless(None)))
+                        .with_resizable(false)
+                        .with_window_level(WindowLevel::AlwaysOnTop),
+                )
+                .unwrap();
 
             let (width, height) = {
                 let window_size = window.inner_size();
                 (window_size.width, window_size.height)
             };
             self.size = (width, height);
-            
-            let surface_texture = SurfaceTexture::new(
-                width, height,
-                &window
-            );
+
+            let surface_texture = SurfaceTexture::new(width, height, &window);
 
             let builder = PixelsBuilder::new(width, height, surface_texture);
             let builder = builder.clear_color(pixels::wgpu::Color::WHITE);
-            let builder = builder.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb);
+            let builder =
+                builder.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb);
             let pixels = builder.build().expect("Unable to create pixels");
 
-            let mut shader_renderer = renderer::Renderer::new(&pixels, width, height).expect("Unable to create shader renderer");
+            let mut shader_renderer = renderer::Renderer::new(&pixels, width, height)
+                .expect("Unable to create shader renderer");
             let result = shader_renderer.write_screenshot_to_texture(&pixels, screenshot);
             if result.is_err() {
                 println!("Error writing screenshot to texture: {:?}", result);
@@ -123,7 +125,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
-            },
+            }
             WindowEvent::RedrawRequested => {
                 // Redraw the application.
                 //
@@ -133,7 +135,7 @@ impl ApplicationHandler for App {
                 if self.window_state.is_none() {
                     return; // Shouldn't happen, but just in case
                 }
-                
+
                 let window = &self.window_state.as_ref().unwrap().window;
                 if window.is_minimized().unwrap_or(true) {
                     return;
@@ -143,8 +145,13 @@ impl ApplicationHandler for App {
                 let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
-                    shader_renderer.update(&context.queue, Locals::new(self.selection, self.size, false));
-                    shader_renderer.render(encoder, render_target, context.scaling_renderer.clip_rect());
+                    shader_renderer
+                        .update(&context.queue, Locals::new(self.selection, self.size, true));
+                    shader_renderer.render(
+                        encoder,
+                        render_target,
+                        context.scaling_renderer.clip_rect(),
+                    );
 
                     Ok(())
                 });
@@ -154,9 +161,13 @@ impl ApplicationHandler for App {
                 }
 
                 window.request_redraw();
-            },
+            }
             #[allow(unused)]
-            WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+            WindowEvent::KeyboardInput {
+                device_id,
+                event,
+                is_synthetic,
+            } => {
                 if self.window_state.is_none() {
                     return; // Probably shouldn't happen; just in case
                 }
@@ -165,46 +176,52 @@ impl ApplicationHandler for App {
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => {
                         window.set_minimized(true);
-                    },
+                    }
                     Key::Named(NamedKey::Shift) => {
-                        self.selection.shift_held = event.state == winit::event::ElementState::Pressed;
-                    },
+                        self.selection.shift_held =
+                            event.state == winit::event::ElementState::Pressed;
+                    }
                     _ => (),
                 }
-            },
+            }
             #[allow(unused)]
-            WindowEvent::MouseInput { device_id, state, button } => {
-                match button {
-                    winit::event::MouseButton::Left => {
-                        if state == winit::event::ElementState::Pressed {
-                            let (x, y) = MouseCursor::pos();
-                            self.selection.bounds.x = x;
-                            self.selection.bounds.y = y;
-                            self.selection.bounds.width = 0;
-                            self.selection.bounds.height = 0;
-                            self.selection.mouse_down = true;
-                        } else {
-                            self.selection.mouse_down = false;
-                        }
-                        self.window_state.as_ref().unwrap().window.request_redraw();
-                    },
-                    _ => (),
+            WindowEvent::MouseInput {
+                device_id,
+                state,
+                button,
+            } => match button {
+                winit::event::MouseButton::Left => {
+                    if state == winit::event::ElementState::Pressed {
+                        let (x, y) = MouseCursor::pos();
+                        self.selection.bounds.x = x;
+                        self.selection.bounds.y = y;
+                        self.selection.bounds.width = 0;
+                        self.selection.bounds.height = 0;
+                        self.selection.mouse_down = true;
+                    } else {
+                        self.selection.mouse_down = false;
+                    }
+                    self.window_state.as_ref().unwrap().window.request_redraw();
                 }
+                _ => (),
             },
             #[allow(unused)]
-            WindowEvent::CursorMoved { device_id, position } => {
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+            } => {
                 if self.window_state.is_none() {
                     return; // Probably shouldn't happen; just in case
                 }
 
-                if(!self.selection.mouse_down) {
+                if (!self.selection.mouse_down) {
                     return;
                 }
-                
+
                 // If shift is held, move the selection instead of resizing
                 let (x, y) = (position.x as i32, position.y as i32);
                 if !self.selection.shift_held {
-                    self.selection.bounds.width  = x - self.selection.bounds.x;
+                    self.selection.bounds.width = x - self.selection.bounds.x;
                     self.selection.bounds.height = y - self.selection.bounds.y;
                 } else {
                     self.selection.bounds.x = x - self.selection.bounds.width;
