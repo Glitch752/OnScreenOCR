@@ -1,4 +1,5 @@
 use inputbot::{KeybdKey::*, MouseCursor};
+use ocr_handler::OCRHandler;
 use renderer::Locals;
 use screenshot::screenshot_primary;
 use winit::application::ApplicationHandler;
@@ -14,6 +15,7 @@ use selection::Selection;
 mod renderer;
 mod selection;
 mod screenshot;
+mod ocr_handler;
 
 fn main() {
     // Only run event loop on user interaction
@@ -46,7 +48,8 @@ struct WindowState {
 struct App {
     window_state: Option<WindowState>,
     size: (u32, u32),
-    current_selection: Selection,
+    selection: Selection,
+    ocr_handler: OCRHandler
 }
 
 impl ApplicationHandler for App {
@@ -107,6 +110,8 @@ impl ApplicationHandler for App {
                 println!("Error writing screenshot to texture: {:?}", result);
             }
 
+            self.selection.reset();
+
             window.set_minimized(false);
             window.focus_window();
             window.request_redraw();
@@ -138,7 +143,7 @@ impl ApplicationHandler for App {
                 let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
-                    shader_renderer.update(&context.queue, Locals::new(self.current_selection, self.size, false));
+                    shader_renderer.update(&context.queue, Locals::new(self.selection, self.size, false));
                     shader_renderer.render(encoder, render_target, context.scaling_renderer.clip_rect());
 
                     Ok(())
@@ -162,7 +167,7 @@ impl ApplicationHandler for App {
                         window.set_minimized(true);
                     },
                     Key::Named(NamedKey::Shift) => {
-                        self.current_selection.shift_held = event.state == winit::event::ElementState::Pressed;
+                        self.selection.shift_held = event.state == winit::event::ElementState::Pressed;
                     },
                     _ => (),
                 }
@@ -173,13 +178,13 @@ impl ApplicationHandler for App {
                     winit::event::MouseButton::Left => {
                         if state == winit::event::ElementState::Pressed {
                             let (x, y) = MouseCursor::pos();
-                            self.current_selection.x = x;
-                            self.current_selection.y = y;
-                            self.current_selection.width = 0;
-                            self.current_selection.height = 0;
-                            self.current_selection.mouse_down = true;
+                            self.selection.bounds.x = x;
+                            self.selection.bounds.y = y;
+                            self.selection.bounds.width = 0;
+                            self.selection.bounds.height = 0;
+                            self.selection.mouse_down = true;
                         } else {
-                            self.current_selection.mouse_down = false;
+                            self.selection.mouse_down = false;
                         }
                         self.window_state.as_ref().unwrap().window.request_redraw();
                     },
@@ -192,18 +197,18 @@ impl ApplicationHandler for App {
                     return; // Probably shouldn't happen; just in case
                 }
 
-                if(!self.current_selection.mouse_down) {
+                if(!self.selection.mouse_down) {
                     return;
                 }
                 
                 // If shift is held, move the selection instead of resizing
                 let (x, y) = (position.x as i32, position.y as i32);
-                if !self.current_selection.shift_held {
-                    self.current_selection.width = x - self.current_selection.x;
-                    self.current_selection.height = y - self.current_selection.y;
+                if !self.selection.shift_held {
+                    self.selection.bounds.width  = x - self.selection.bounds.x;
+                    self.selection.bounds.height = y - self.selection.bounds.y;
                 } else {
-                    self.current_selection.x = x - self.current_selection.width;
-                    self.current_selection.y = y - self.current_selection.height;
+                    self.selection.bounds.x = x - self.selection.bounds.width;
+                    self.selection.bounds.y = y - self.selection.bounds.height;
                 }
                 self.window_state.as_ref().unwrap().window.request_redraw();
             }

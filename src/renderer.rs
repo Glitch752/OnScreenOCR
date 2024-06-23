@@ -19,8 +19,8 @@ pub(crate) struct Locals {
 impl Locals {
     pub(crate) fn new(selection: Selection, window_size: (u32, u32), blur_enabled: bool) -> Self {
         let (window_width, window_height) = (window_size.0 as f32, window_size.1 as f32);
-        let (mut selection_width, mut selection_height) = (selection.width as f32, selection.height as f32);
-        let (mut selection_x, mut selection_y) = (selection.x as f32, selection.y as f32);
+        let (mut selection_width, mut selection_height) = (selection.bounds.width as f32, selection.bounds.height as f32);
+        let (mut selection_x, mut selection_y) = (selection.bounds.x as f32, selection.bounds.y as f32);
 
         // Ensure dimensions are positive
         if selection_width < 0.0 {
