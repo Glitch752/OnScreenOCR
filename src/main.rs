@@ -211,6 +211,8 @@ impl ApplicationHandler for App {
                     self.selection.bounds.y = y - self.selection.bounds.height;
                 }
                 self.window_state.as_ref().unwrap().window.request_redraw();
+
+                self.ocr_handler.selection_changed(self.selection);
             }
             _ => (),
         }
