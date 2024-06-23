@@ -206,8 +206,8 @@ impl Renderer {
             multiview: None,
         });
 
-        let icon_renderer = IconRenderer::new(device);
-        icon_renderer.write_icon_atlas(pixels.queue());
+        let mut icon_renderer = IconRenderer::new(device, width as f32, height as f32);
+        icon_renderer.initialize(pixels.queue());
 
         Ok(Self {
             texture,

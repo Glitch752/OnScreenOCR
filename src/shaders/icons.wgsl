@@ -10,15 +10,18 @@ struct Matrix {
 
 @group(0) @binding(2)
 var<uniform> ortho: Matrix;
+@group(0) @binding(3)
+var<uniform> icon_count: u32;
 
 @vertex
 fn vs_main(
     @location(0) position: vec2<f32>,
-    @location(1) instance_position: vec2<f32>,
+    @location(1) instance_position: vec4<f32>, // Icon x, icon y, icon width, icon height
+    @location(2) icon_state: f32 // Icon atlas horizontal position
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.tex_coord = position;
-    out.clip_position = ortho.v * vec4<f32>(position + instance_position, 0.0, 1.0);
+    out.tex_coord = (position / vec2<f32>(f32(icon_count * 4u), 1.0)) + icon_state;
+    out.clip_position = ortho.v * vec4<f32>(position * instance_position.zw + instance_position.xy, 0.0, 1.0);
     return out;
 }
 
