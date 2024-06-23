@@ -135,6 +135,7 @@ mod ffi {
 	#[link(name = "user32")]
 	extern "system" {
 		fn GetSystemMetrics(m: c_int) -> c_int;
+        #[allow(improper_ctypes)]
 		fn EnumDisplayMonitors(hdc: HDC, lprcClip: LPCRECT,
 							   lpfnEnum: MONITORENUMPROC, dwData: LPARAM) -> BOOL;
 		fn GetMonitorInfo(hMonitor: HMONITOR, lpmi: LPMONITORINFO) -> BOOL;

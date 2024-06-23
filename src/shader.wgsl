@@ -30,9 +30,9 @@ struct Locals {
 
 const BLUR_RADIUS = 2.0;
 const BLUR_ITERATIONS = 2.0;
-const OUT_OF_BOX_TINT = vec3<f32>(0.6, 0.6, 0.6);
+const OUT_OF_BOX_TINT = vec3<f32>(0.6, 0.6, 0.65);
 
-const BORDER_WIDTH = 2.0;
+const BORDER_WIDTH = 1.0;
 const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);
 
 fn get_blurred_color(
@@ -79,25 +79,47 @@ fn fs_main(
 
     let in_box_color = textureSample(r_tex_color, r_tex_sampler, tex_coord).rgb;
     var out_of_box_color: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
-    if(r_locals.blur_enabled == 1u) {
+    if(r_locals.blur_enabled != 0u) {
         out_of_box_color = get_blurred_color(r_tex_color, r_tex_sampler, tex_coord, screen_dimensions, BLUR_RADIUS);
     } else {
         out_of_box_color = textureSample(r_tex_color, r_tex_sampler, tex_coord).rgb;
     }
 
-    let half_horiz_bw = BORDER_WIDTH / screen_dimensions.x / 2.0;
-    let half_vert_bw = BORDER_WIDTH / screen_dimensions.y / 2.0;
+    // Branching is bad, but this is 2 constants so it should be optimized out
+    // It's also not like we care about performance _that_ much
+    var in_border: f32 = 0.0;
+    var in_box: f32 = 0.0;
+    if(BORDER_WIDTH > 1.0) {
+        // Even on both sides
+        let half_horiz_bw = BORDER_WIDTH / screen_dimensions.x / 2.0;
+        let half_vert_bw = BORDER_WIDTH / screen_dimensions.y / 2.0;
 
-    let in_border =
-        step(r_locals.x - half_horiz_bw, tex_coord.x) *
-        step(r_locals.y - half_vert_bw, tex_coord.y) *
-        step(tex_coord.x, r_locals.x + r_locals.width + half_horiz_bw) *
-        step(tex_coord.y, r_locals.y + r_locals.height + half_vert_bw);
-    let in_box =
-        step(r_locals.x + half_horiz_bw, tex_coord.x) *
-        step(r_locals.y + half_vert_bw, tex_coord.y) *
-        step(tex_coord.x, r_locals.x + r_locals.width - half_horiz_bw) *
-        step(tex_coord.y, r_locals.y + r_locals.height - half_vert_bw);
+        in_border =
+            step(r_locals.x - half_horiz_bw, tex_coord.x) *
+            step(r_locals.y - half_vert_bw, tex_coord.y) *
+            step(tex_coord.x, r_locals.x + r_locals.width + half_horiz_bw) *
+            step(tex_coord.y, r_locals.y + r_locals.height + half_vert_bw);
+        in_box =
+            step(r_locals.x + half_horiz_bw, tex_coord.x) *
+            step(r_locals.y + half_vert_bw, tex_coord.y) *
+            step(tex_coord.x, r_locals.x + r_locals.width - half_horiz_bw) *
+            step(tex_coord.y, r_locals.y + r_locals.height - half_vert_bw);
+    } else {
+        // To prevent pixel misalignment, make the border only go outwards
+        let horiz_bw = BORDER_WIDTH / screen_dimensions.x;
+        let vert_bw = BORDER_WIDTH / screen_dimensions.y;
+
+        in_border =
+            step(r_locals.x - horiz_bw, tex_coord.x) *
+            step(r_locals.y - vert_bw, tex_coord.y) *
+            step(tex_coord.x, r_locals.x + r_locals.width + horiz_bw) *
+            step(tex_coord.y, r_locals.y + r_locals.height + vert_bw);
+        in_box =
+            step(r_locals.x, tex_coord.x) *
+            step(r_locals.y, tex_coord.y) *
+            step(tex_coord.x, r_locals.x + r_locals.width) *
+            step(tex_coord.y, r_locals.y + r_locals.height);
+    }
 
     let in_border_color = mix(BORDER_COLOR, in_box_color, in_box);
 

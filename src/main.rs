@@ -161,6 +161,9 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Escape) => {
                         window.set_minimized(true);
                     },
+                    Key::Named(NamedKey::Shift) => {
+                        self.current_selection.shift_held = event.state == winit::event::ElementState::Pressed;
+                    },
                     _ => (),
                 }
             },
@@ -193,10 +196,15 @@ impl ApplicationHandler for App {
                     return;
                 }
                 
-                let (x, y) = MouseCursor::pos();
-                self.current_selection.width = x - self.current_selection.x;
-                self.current_selection.height = y - self.current_selection.y;
-
+                // If shift is held, move the selection instead of resizing
+                let (x, y) = (position.x as i32, position.y as i32);
+                if !self.current_selection.shift_held {
+                    self.current_selection.width = x - self.current_selection.x;
+                    self.current_selection.height = y - self.current_selection.y;
+                } else {
+                    self.current_selection.x = x - self.current_selection.width;
+                    self.current_selection.y = y - self.current_selection.height;
+                }
                 self.window_state.as_ref().unwrap().window.request_redraw();
             }
             _ => (),

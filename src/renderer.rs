@@ -243,6 +243,7 @@ impl Renderer {
         Ok(())
     }
 
+    #[allow(dead_code)] // TODO: Remove this once it is used
     pub(crate) fn resize(
         &mut self,
         pixels: &pixels::Pixels,

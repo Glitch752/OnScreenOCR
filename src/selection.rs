@@ -6,6 +6,7 @@ pub(crate) struct Selection {
     pub height: i32,
 
     pub mouse_down: bool,
+    pub shift_held: bool,
 }
 
 impl Default for Selection {
@@ -15,7 +16,9 @@ impl Default for Selection {
             y: 0,
             width: 500,
             height: 500,
+
             mouse_down: false,
+            shift_held: false,
         }
     }
 }
