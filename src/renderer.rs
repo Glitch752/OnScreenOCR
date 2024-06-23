@@ -1,3 +1,4 @@
+use icon_renderer::IconRenderer;
 use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
 };
@@ -68,7 +69,9 @@ pub(crate) struct Renderer {
     vertex_buffer: wgpu::Buffer,
 
     text_brush: TextBrush<FontRef<'static>>,
-    should_render_text: bool
+    should_render_text: bool,
+
+    icon_renderer: IconRenderer
 }
 
 impl Renderer {
@@ -218,7 +221,8 @@ impl Renderer {
                 height,
                 wgpu::TextureFormat::Bgra8UnormSrgb
             ),
-            should_render_text: false
+            should_render_text: false,
+            icon_renderer: IconRenderer::new()
         })
     }
 
