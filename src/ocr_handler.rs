@@ -61,8 +61,6 @@ impl OCRHandler {
             .as_mut()
             .unwrap()
             .put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
-
-        self.ocr_preview_text = None;
     }
 
     pub fn update_ocr_preview_text(&mut self) {
@@ -95,7 +93,8 @@ impl OCRHandler {
 }
 
 fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender<String>) {
-    if bounds.width < 5 || bounds.height < 5 {
+    let pos_bounds = bounds.to_positive_size();
+    if pos_bounds.width < 5 || pos_bounds.height < 5 {
         return;
     }
 
@@ -108,7 +107,6 @@ fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender
         screenshot.height as u32,
         screenshot.bytes
     ).unwrap();
-    let pos_bounds = bounds.to_positive_size();
     let image_view = img.sub_image(
         pos_bounds.x as u32,
         pos_bounds.y as u32,

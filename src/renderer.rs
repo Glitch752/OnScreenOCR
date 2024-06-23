@@ -274,7 +274,8 @@ impl Renderer {
     fn get_preview_text_placement(
         &self,
         window_size: (u32, u32),
-        bounds: Bounds
+        bounds: Bounds,
+        text_lines: i32
     ) -> Option<(f32, f32, glyph_brush::HorizontalAlign)> {
         let bounds = bounds.to_positive_size();
         if bounds.width == 0 || bounds.height == 0 {
@@ -284,10 +285,22 @@ impl Renderer {
         let left_side_space = bounds.x;
         let right_side_space = window_size.0 as i32 - (bounds.x + bounds.width);
 
+        let margin = 10;
+
+        let y = std::cmp::min(bounds.y, window_size.1 as i32 - ((text_lines - 1) * 24 + margin));
+
         if left_side_space > right_side_space {
-            Some((bounds.x as f32, bounds.y as f32, glyph_brush::HorizontalAlign::Right))
+            Some((
+                (bounds.x - margin) as f32,
+                y as f32,
+                glyph_brush::HorizontalAlign::Right
+            ))
         } else {
-            Some(((bounds.x + bounds.width) as f32, bounds.y as f32, glyph_brush::HorizontalAlign::Left))
+            Some((
+                (bounds.x + bounds.width + margin) as f32,
+                y as f32,
+                glyph_brush::HorizontalAlign::Left
+            ))
         }
     }
 
@@ -311,7 +324,7 @@ impl Renderer {
         }
 
         let text = ocr_preview_text.unwrap();
-        let placement = self.get_preview_text_placement(window_size, selection.bounds);
+        let placement = self.get_preview_text_placement(window_size, selection.bounds, text.lines().count() as i32);
         if placement.is_none() {
             return;
         }
@@ -320,8 +333,9 @@ impl Renderer {
         self.should_render_text = true;
 
         let section = TextSection::default()
-            .add_text(Text::new(&text).with_color([1.0, 1.0, 1.0, 1.0]).with_scale(20.0))
-            .with_screen_position((placement.0, placement.1))
+            .add_text(Text::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9]).with_scale(16.0))
+            .add_text(Text::new(&text).with_color([0.8, 0.8, 0.8, 0.6]).with_scale(18.0))
+            .with_screen_position((placement.0, placement.1 - 18.0))
             .with_layout(glyph_brush::Layout::default().h_align(placement.2));
         self.text_brush.queue(device, queue, vec![&section]).unwrap();
     }
@@ -351,7 +365,9 @@ impl Renderer {
         rpass.set_scissor_rect(clip_rect.0, clip_rect.1, clip_rect.2, clip_rect.3);
         rpass.draw(0..3, 0..1);
         
-        self.text_brush.draw(&mut rpass);
+        if self.should_render_text {
+            self.text_brush.draw(&mut rpass);
+        }
     }
 }
 

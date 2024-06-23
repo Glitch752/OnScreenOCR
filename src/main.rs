@@ -209,6 +209,7 @@ impl ApplicationHandler for App {
                         self.selection.bounds.width = 0;
                         self.selection.bounds.height = 0;
                         self.selection.mouse_down = true;
+                        self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                     } else {
                         self.selection.mouse_down = false;
                     }
