@@ -1,0 +1,8 @@
+new-line-hover.png 2048
+copy-selected-hover.png 512
+copy.png 1536
+new-line-selected-hover.png 2560
+copy-selected.png 1024
+new-line.png 3584
+copy-hover.png 0
+new-line-selected.png 3072
