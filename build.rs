@@ -4,13 +4,13 @@ use std::io::Write;
 use image::{GenericImage, GenericImageView};
 
 fn main() {  
-    // let generate_icon_atlas = env::var("GENERATE_ICON_ATLAS")
-    //     .map(|v| v == "1")
-    //     .unwrap_or(false);
+    let generate_icon_atlas = env::var("GENERATE_ICON_ATLAS")
+        .map(|v| v == "1")
+        .unwrap_or(false);
 
-    // if generate_icon_atlas {
+    if generate_icon_atlas {
         generate_atlas();
-    // }
+    }
 }
 
 pub fn generate_atlas() -> () {

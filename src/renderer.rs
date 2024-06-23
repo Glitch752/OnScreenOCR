@@ -62,7 +62,7 @@ pub(crate) struct Renderer {
     texture: wgpu::Texture,
     texture_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
-    bind_group_layout: wgpu::BindGroupLayout,
+    bg_bind_group_layout: wgpu::BindGroupLayout,
     background_bind_group: wgpu::BindGroup,
     background_pipeline: wgpu::RenderPipeline,
     locals_buffer: wgpu::Buffer,
@@ -210,7 +210,7 @@ impl Renderer {
             texture,
             texture_view,
             sampler,
-            bind_group_layout,
+            bg_bind_group_layout: bind_group_layout,
             background_bind_group: bind_group,
             background_pipeline: render_pipeline,
             locals_buffer,
@@ -222,7 +222,7 @@ impl Renderer {
                 wgpu::TextureFormat::Bgra8UnormSrgb
             ),
             should_render_text: false,
-            icon_renderer: IconRenderer::new()
+            icon_renderer: IconRenderer::new(device)
         })
     }
 
@@ -266,7 +266,7 @@ impl Renderer {
         
         self.background_bind_group = create_bind_group(
             pixels.device(),
-            &self.bind_group_layout,
+            &self.bg_bind_group_layout,
             &self.texture_view,
             &self.sampler,
             &self.locals_buffer,
@@ -315,7 +315,8 @@ impl Renderer {
         context: &PixelsContext,
         window_size: (u32, u32),
         selection: Selection,
-        ocr_preview_text: Option<String>
+        ocr_preview_text: Option<String>,
+        relative_mouse_pos: (i32, i32)
     ) {
         let device = &context.device;
         let queue = &context.queue;
@@ -344,6 +345,8 @@ impl Renderer {
             .with_screen_position((placement.0, placement.1 - 18.0))
             .with_layout(glyph_brush::Layout::default().h_align(placement.2));
         self.text_brush.queue(device, queue, vec![&section]).unwrap();
+
+        self.icon_renderer.update(queue, relative_mouse_pos);
     }
 
     fn render_background<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>, clip_rect: (u32, u32, u32, u32)) {
@@ -378,6 +381,8 @@ impl Renderer {
         if self.should_render_text {
             self.text_brush.draw(&mut rpass);
         }
+
+        self.icon_renderer.render(&mut rpass);
     }
 }
 

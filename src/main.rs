@@ -52,7 +52,8 @@ struct App {
     window_state: Option<WindowState>,
     size: (u32, u32),
     selection: Selection,
-    ocr_handler: OCRHandler
+    ocr_handler: OCRHandler,
+    relative_mouse_pos: (i32, i32),
 }
 
 impl ApplicationHandler for App {
@@ -157,7 +158,8 @@ impl ApplicationHandler for App {
                         context,
                         self.size,
                         self.selection,
-                        self.ocr_handler.ocr_preview_text.clone()
+                        self.ocr_handler.ocr_preview_text.clone(),
+                        self.relative_mouse_pos
                     );
                     shader_renderer.render(
                         encoder,
@@ -277,6 +279,8 @@ impl ApplicationHandler for App {
                 if self.window_state.is_none() {
                     return; // Probably shouldn't happen; just in case
                 }
+
+                self.relative_mouse_pos = (position.x as i32, position.y as i32);
 
                 if (!self.selection.mouse_down) {
                     return;
