@@ -74,6 +74,7 @@ impl OCRHandler {
     }
 
     fn initialize_debouncer(&mut self) {
+        // TODO: Don't let OCR thread get behind
         let tx = self.ocr_result_sender.clone();
         self.debouncer = Some(OCRDebouncer::new::<_, _, InitData>(
             DEBOUNE_TIME,

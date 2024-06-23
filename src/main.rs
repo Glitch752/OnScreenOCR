@@ -1,3 +1,4 @@
+use clipboard::{ClipboardContext, ClipboardProvider};
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::OCRHandler;
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
@@ -51,7 +52,7 @@ struct App {
     window_state: Option<WindowState>,
     size: (u32, u32),
     selection: Selection,
-    ocr_handler: OCRHandler,
+    ocr_handler: OCRHandler
 }
 
 impl ApplicationHandler for App {
@@ -182,15 +183,66 @@ impl ApplicationHandler for App {
                 if self.window_state.is_none() {
                     return; // Probably shouldn't happen; just in case
                 }
+
                 let window = &self.window_state.as_ref().unwrap().window;
 
-                match event.logical_key {
+                let mut move_dist = 10;
+                if self.selection.shift_held {
+                    move_dist /= 10;
+                } else if self.selection.ctrl_held {
+                    move_dist *= 5;
+                }
+
+                match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
                         window.set_minimized(true);
                     }
                     Key::Named(NamedKey::Shift) => {
                         self.selection.shift_held =
                             event.state == winit::event::ElementState::Pressed;
+                    }
+                    Key::Named(NamedKey::Control) => {
+                        self.selection.ctrl_held =
+                            event.state == winit::event::ElementState::Pressed;
+                    }
+                    Key::Character("c") => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            if self.ocr_handler.ocr_preview_text.is_none() {
+                                return;
+                            }
+
+                            // Copy the OCR text to the clipboard
+                            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                            ctx.set_contents(self.ocr_handler.ocr_preview_text.clone().unwrap());
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.selection.bounds.y += move_dist;
+                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.ocr_handler.selection_changed(self.selection);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.selection.bounds.y -= move_dist;
+                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.ocr_handler.selection_changed(self.selection);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowLeft) => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.selection.bounds.x -= move_dist;
+                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.ocr_handler.selection_changed(self.selection);
+                        }
+                    }
+                    Key::Named(NamedKey::ArrowRight) => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.selection.bounds.x += move_dist;
+                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.ocr_handler.selection_changed(self.selection);
+                        }
                     }
                     _ => (),
                 }
