@@ -60,8 +60,8 @@ pub(crate) struct Renderer {
     texture_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
     bind_group_layout: wgpu::BindGroupLayout,
-    bind_group: wgpu::BindGroup,
-    render_pipeline: wgpu::RenderPipeline,
+    background_bind_group: wgpu::BindGroup,
+    background_pipeline: wgpu::RenderPipeline,
     locals_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
 
@@ -76,7 +76,7 @@ impl Renderer {
         height: u32,
     ) -> Result<Self, TextureError> {
         let device = pixels.device();
-        let shader = wgpu::include_wgsl!("./shader.wgsl");
+        let shader = wgpu::include_wgsl!("./shaders/background.wgsl");
         let module = device.create_shader_module(shader);
 
         let texture = create_texture(pixels, width, height)?;
@@ -206,8 +206,8 @@ impl Renderer {
             texture_view,
             sampler,
             bind_group_layout,
-            bind_group,
-            render_pipeline,
+            background_bind_group: bind_group,
+            background_pipeline: render_pipeline,
             locals_buffer,
             vertex_buffer,
             text_brush: BrushBuilder::using_font_bytes(include_bytes!("../fonts/DejaVuSans.ttf")).expect("Unable to load font").build(
@@ -258,7 +258,7 @@ impl Renderer {
         self.texture = create_texture(pixels, width, height)?;
         self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
         
-        self.bind_group = create_bind_group(
+        self.background_bind_group = create_bind_group(
             pixels.device(),
             &self.bind_group_layout,
             &self.texture_view,
@@ -340,6 +340,14 @@ impl Renderer {
         self.text_brush.queue(device, queue, vec![&section]).unwrap();
     }
 
+    fn render_background<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>, clip_rect: (u32, u32, u32, u32)) {
+        rpass.set_pipeline(&self.background_pipeline);
+        rpass.set_bind_group(0, &self.background_bind_group, &[]);
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        rpass.set_scissor_rect(clip_rect.0, clip_rect.1, clip_rect.2, clip_rect.3);
+        rpass.draw(0..3, 0..1);
+    }
+
     pub(crate) fn render(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -359,11 +367,7 @@ impl Renderer {
             depth_stencil_attachment: None,
         });
 
-        rpass.set_pipeline(&self.render_pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        rpass.set_scissor_rect(clip_rect.0, clip_rect.1, clip_rect.2, clip_rect.3);
-        rpass.draw(0..3, 0..1);
+        self.render_background(&mut rpass, clip_rect);
         
         if self.should_render_text {
             self.text_brush.draw(&mut rpass);
