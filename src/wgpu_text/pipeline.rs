@@ -1,6 +1,5 @@
 use std::num::NonZeroU32;
 
-use wgpu_text::glyph_brush;
 use pixels::wgpu;
 
 use glyph_brush::{

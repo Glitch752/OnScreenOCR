@@ -22,7 +22,18 @@ mod error;
 mod pipeline;
 
 pub use brush::{BrushBuilder, TextBrush};
-pub use wgpu_text::glyph_brush;
+pub use glyph_brush;
 
 /// Represents a two-dimensional array matrix with 4x4 dimensions.
 pub type Matrix = [[f32; 4]; 4];
+
+/// Creates an orthographic matrix with given dimensions `width` and `height`.
+#[rustfmt::skip]
+pub fn ortho(width: f32, height: f32) -> Matrix {
+    [
+        [2.0 / width, 0.0,          0.0, 0.0],
+        [0.0,        -2.0 / height, 0.0, 0.0],
+        [0.0,         0.0,          1.0, 0.0],
+        [-1.0,        1.0,          0.0, 1.0]
+    ]
+}

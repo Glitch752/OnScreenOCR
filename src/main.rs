@@ -141,19 +141,20 @@ impl ApplicationHandler for App {
                     return; // Shouldn't happen, but just in case
                 }
 
-                let window = &self.window_state.as_ref().unwrap().window;
+                let state = self.window_state.as_mut().unwrap();
+                let window = &state.window;
                 if window.is_minimized().unwrap_or(true) {
                     return;
                 }
 
-                let pixels = &self.window_state.as_ref().unwrap().pixels;
-                let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
+                let pixels = &state.pixels;
+                let shader_renderer = &mut state.shader_renderer;
 
                 self.ocr_handler.update_ocr_preview_text();
 
                 let render_result = pixels.render_with(|encoder, render_target, context| {
                     shader_renderer
-                        .update(&context.queue, Locals::new(self.selection, self.size, true), self.ocr_handler.ocr_preview_text.clone());
+                        .update(&context.device, &context.queue, Locals::new(self.selection, self.size, true), self.ocr_handler.ocr_preview_text.clone());
                     shader_renderer.render(
                         encoder,
                         render_target,

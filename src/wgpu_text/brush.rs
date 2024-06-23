@@ -6,7 +6,6 @@ use crate::{
     wgpu_text::pipeline::{Pipeline, Vertex},
     wgpu_text::Matrix,
 };
-use wgpu_text::glyph_brush;
 use glyph_brush::{
     ab_glyph::{Font, FontArc, FontRef, InvalidFont, Rect}, BrushAction, DefaultSectionHasher, Extra, GlyphCruncher, Section, SectionGlyphIter
 };
@@ -15,7 +14,7 @@ use glyph_brush::{
 ///
 /// Used for queuing and rendering text with [`TextBrush::draw`].
 pub struct TextBrush<F = FontArc, H = DefaultSectionHasher> {
-    inner: wgpu_text::glyph_brush::GlyphBrush<Vertex, Extra, F, H>,
+    inner: glyph_brush::GlyphBrush<Vertex, Extra, F, H>,
     pipeline: Pipeline,
 }
 
@@ -162,7 +161,7 @@ where
     /// ```
     #[inline]
     pub fn resize_view(&self, width: f32, height: f32, queue: &wgpu::Queue) {
-        self.update_matrix(wgpu_text::ortho(width, height), queue);
+        self.update_matrix(super::ortho(width, height), queue);
     }
 
     /// Resizes the view. Updates text rendering matrix with the provided one.
@@ -288,7 +287,7 @@ where
 
         let matrix = self
             .matrix
-            .unwrap_or_else(|| wgpu_text::ortho(render_width as f32, render_height as f32));
+            .unwrap_or_else(|| super::ortho(render_width as f32, render_height as f32));
 
         let pipeline = Pipeline::new(
             device,

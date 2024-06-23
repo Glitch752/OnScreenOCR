@@ -1,10 +1,8 @@
 use pixels::wgpu;
-use wgpu_text::glyph_brush;
 
 use glyph_brush::Rectangle;
 use wgpu::util::DeviceExt;
-
-use wgpu_text::Matrix;
+use super::Matrix;
 
 /// Responsible for texture caching and the global matrix.
 #[derive(Debug)]

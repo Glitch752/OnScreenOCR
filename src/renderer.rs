@@ -3,6 +3,7 @@ use pixels::{
     wgpu::{self, util::DeviceExt},
     TextureError,
 };
+use glyph_brush::{Text, Section as TextSection};
 use crate::wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush};
 
 use crate::{screenshot::Screenshot, selection::Selection};
@@ -264,12 +265,18 @@ impl Renderer {
             &self.sampler,
             &self.locals_buffer,
         );
+        
+        self.text_brush.resize_view(width as f32, height as f32, pixels.queue());
 
         Ok(())
     }
 
-    pub(crate) fn update(&self, queue: &wgpu::Queue, locals: Locals, ocr_preview_text: Option<String>) {
+    pub(crate) fn update(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, locals: Locals, ocr_preview_text: Option<String>) {
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
+
+        let text = ocr_preview_text.unwrap_or_default();
+        let section = TextSection::default().add_text(Text::new(&text).with_color([0.0, 0.0, 0.0, 1.0]));
+        self.text_brush.queue(device, queue, vec![&section]).unwrap();
     }
 
     pub(crate) fn render(
@@ -290,6 +297,9 @@ impl Renderer {
             })],
             depth_stencil_attachment: None,
         });
+        
+        self.text_brush.draw(&mut rpass);
+
         rpass.set_pipeline(&self.render_pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
