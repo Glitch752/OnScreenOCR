@@ -1,6 +1,8 @@
-use debounce::EventDebouncer;
-use image::{GenericImage, ImageBuffer, Pixel, Rgba};
-use std::{sync::{LazyLock, Mutex}, time::Duration};
+use image::{GenericImage, ImageBuffer, Rgba};
+use std::{sync::{Arc, LazyLock, Mutex}, time::Duration};
+use debounce::buffer::{EventBuffer, Get, State};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::{self, JoinHandle};
 
 use crate::{screenshot::Screenshot, selection::{Bounds, Selection}};
 
@@ -22,7 +24,7 @@ impl PartialEq for OCREvent {
 }
 
 pub(crate) struct OCRHandler {
-    pub debouncer: Option<EventDebouncer<OCREvent>>
+    pub debouncer: Option<OCRDebouncer<OCREvent>>
 }
 
 impl Default for OCRHandler {
@@ -50,18 +52,21 @@ impl OCRHandler {
     }
 
     fn initialize_debouncer(&mut self) {
-        self.debouncer = Some(EventDebouncer::new(
+        self.debouncer = Some(OCRDebouncer::new(
             DEBOUNE_TIME,
-            move |event| match event {
+            move |event, init_data| match event {
                 OCREvent::SelectionChanged(bounds) => {
-                    perform_ocr(bounds);
+                    perform_ocr(bounds, init_data);
                 }
+            },
+            || {
+                leptess::LepTess::new(Some("./tessdata"), "eng").expect("Unable to create Tesseract instance")
             },
         ));
     }
 }
 
-fn perform_ocr(bounds: Bounds) {
+fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess) {
     // Get the current screenshot
     let screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot").clone().expect("No screenshot available");
     
@@ -93,12 +98,71 @@ fn perform_ocr(bounds: Bounds) {
     // Export to a png and save it under the current directory
     cropped_image.save("cropped.png").unwrap();
 
-    let mut leptess = leptess::LepTess::new(Some("./tessdata"), "eng")
-                .expect("Unable to create Tesseract instance");
-
     leptess.set_image("cropped.png").expect("Unable to set image");
     leptess.recognize();
 
     let text = leptess.get_utf8_text().unwrap();
     println!("Recognized text: {}", text);
+}
+
+
+
+
+
+struct OCRDebouncerThread<B> {
+    mutex: Arc<Mutex<B>>,
+    thread: JoinHandle<()>
+}
+
+impl<B> OCRDebouncerThread<B> {
+    fn new<F, G, R>(buffer: B, mut f: F, init_fn: G) -> Self
+    where
+        B: Get + Send + 'static,
+        F: FnMut(B::Data, &mut R) + Send + 'static,
+        G: FnOnce() -> R + Send + 'static,
+        R: 'static,
+    {
+        let mutex = Arc::new(Mutex::new(buffer));
+        let stopped = Arc::new(AtomicBool::new(false));
+
+        let thread = thread::spawn({
+            let mutex = mutex.clone();
+            let stopped = stopped.clone();
+            move || {
+                let mut init_data: R = init_fn();
+
+                while !stopped.load(Ordering::Relaxed) {
+                    let state = mutex.lock().unwrap().get();
+                    match state {
+                        State::Empty => thread::park(),
+                        State::Wait(duration) => thread::sleep(duration),
+                        State::Ready(data) => f(data, &mut init_data),
+                    }
+                }
+            }
+        });
+        Self {
+            mutex,
+            thread
+        }
+    }
+}
+
+pub struct OCRDebouncer<T>(OCRDebouncerThread<EventBuffer<T>>);
+
+impl<T: PartialEq> OCRDebouncer<T> {
+    pub fn new<F, G, R>(delay: Duration, f: F, init_fn: G) -> Self
+    where
+        F: FnMut(T, &mut R) + Send + 'static,
+        T: Send + 'static,
+        G: FnOnce() -> R + Send + 'static,
+        R: 'static,
+    {
+        Self(OCRDebouncerThread::new(EventBuffer::new(delay), f, init_fn))
+    }
+
+    pub fn put(&self, data: T) {
+        self.0.mutex.lock().unwrap().put(data);
+        self.0.thread.thread().unpark();
+    }
 }
