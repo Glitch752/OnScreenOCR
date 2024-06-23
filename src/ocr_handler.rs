@@ -1,5 +1,5 @@
 use image::{GenericImage, ImageBuffer, Rgba};
-use std::{sync::{Arc, LazyLock, Mutex}, time::Duration};
+use std::{sync::{mpsc, Arc, LazyLock, Mutex}, time::Duration};
 use debounce::buffer::{EventBuffer, Get, State};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -24,15 +24,27 @@ impl PartialEq for OCREvent {
 }
 
 pub(crate) struct OCRHandler {
-    pub debouncer: Option<OCRDebouncer<OCREvent>>
+    pub debouncer: Option<OCRDebouncer<OCREvent>>,
+    pub ocr_result_sender: mpsc::Sender<String>,
+    pub ocr_result_receiver: mpsc::Receiver<String>,
+    pub ocr_preview_text: Option<String>,
 }
 
 impl Default for OCRHandler {
     fn default() -> Self {
+        let (tx, rx) = mpsc::channel::<String>();
         OCRHandler {
-            debouncer: None
+            debouncer: None,
+            ocr_result_sender: tx,
+            ocr_result_receiver: rx,
+            ocr_preview_text: None,
         }
     }
+}
+
+struct InitData {
+    tx: mpsc::Sender<String>,
+    leptess: leptess::LepTess,
 }
 
 impl OCRHandler {
@@ -49,24 +61,40 @@ impl OCRHandler {
             .as_mut()
             .unwrap()
             .put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
+
+        self.ocr_preview_text = None;
+    }
+
+    pub fn update_ocr_preview_text(&mut self) {
+        if let Some(text) = self.get_ocr_result() {
+            self.ocr_preview_text = Some(text);
+        }
+    }
+
+    fn get_ocr_result(&mut self) -> Option<String> {
+        self.ocr_result_receiver.try_recv().ok()
     }
 
     fn initialize_debouncer(&mut self) {
-        self.debouncer = Some(OCRDebouncer::new(
+        let tx = self.ocr_result_sender.clone();
+        self.debouncer = Some(OCRDebouncer::new::<_, _, InitData>(
             DEBOUNE_TIME,
             move |event, init_data| match event {
                 OCREvent::SelectionChanged(bounds) => {
-                    perform_ocr(bounds, init_data);
+                    perform_ocr(bounds, &mut init_data.leptess, &init_data.tx);
                 }
             },
             || {
-                leptess::LepTess::new(Some("./tessdata"), "eng").expect("Unable to create Tesseract instance")
+                InitData {
+                    leptess: leptess::LepTess::new(Some("./tessdata"), "eng").expect("Unable to create Tesseract instance"),
+                    tx: tx
+                }
             },
         ));
     }
 }
 
-fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess) {
+fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender<String>) {
     // Get the current screenshot
     let screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot").clone().expect("No screenshot available");
     
@@ -102,7 +130,7 @@ fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess) {
     leptess.recognize();
 
     let text = leptess.get_utf8_text().unwrap();
-    println!("Recognized text: {}", text);
+    tx.send(text).expect("Unable to send text");
 }
 
 

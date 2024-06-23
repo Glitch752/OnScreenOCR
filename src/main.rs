@@ -16,6 +16,7 @@ mod ocr_handler;
 mod renderer;
 mod screenshot;
 mod selection;
+mod wgpu_text;
 
 fn main() {
     // Only run event loop on user interaction
@@ -148,9 +149,11 @@ impl ApplicationHandler for App {
                 let pixels = &self.window_state.as_ref().unwrap().pixels;
                 let shader_renderer = &self.window_state.as_ref().unwrap().shader_renderer;
 
+                self.ocr_handler.update_ocr_preview_text();
+
                 let render_result = pixels.render_with(|encoder, render_target, context| {
                     shader_renderer
-                        .update(&context.queue, Locals::new(self.selection, self.size, true));
+                        .update(&context.queue, Locals::new(self.selection, self.size, true), self.ocr_handler.ocr_preview_text.clone());
                     shader_renderer.render(
                         encoder,
                         render_target,

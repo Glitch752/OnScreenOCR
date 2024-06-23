@@ -3,6 +3,7 @@ use pixels::{
     wgpu::{self, util::DeviceExt},
     TextureError,
 };
+use crate::wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush};
 
 use crate::{screenshot::Screenshot, selection::Selection};
 
@@ -64,6 +65,8 @@ pub(crate) struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     locals_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
+
+    text_brush: TextBrush<FontRef<'static>>,
 }
 
 impl Renderer {
@@ -207,6 +210,12 @@ impl Renderer {
             render_pipeline,
             locals_buffer,
             vertex_buffer,
+            text_brush: BrushBuilder::using_font_bytes(include_bytes!("../fonts/DejaVuSans.ttf")).expect("Unable to load font").build(
+                device,
+                width,
+                height,
+                wgpu::TextureFormat::Rgba8Uint
+            ),
         })
     }
 
@@ -259,7 +268,7 @@ impl Renderer {
         Ok(())
     }
 
-    pub(crate) fn update(&self, queue: &wgpu::Queue, locals: Locals) {
+    pub(crate) fn update(&self, queue: &wgpu::Queue, locals: Locals, ocr_preview_text: Option<String>) {
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
     }
 
