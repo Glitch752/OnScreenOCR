@@ -48,6 +48,11 @@ impl Bounds {
         self.width = width;
         self.height = height;
     }
+
+    pub fn contains(&self, point: (i32, i32)) -> bool {
+        let (x, y) = point;
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
 }
 
 #[derive(Debug, Clone, Default, Copy, PartialEq)]
