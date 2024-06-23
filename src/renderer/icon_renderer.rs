@@ -1,4 +1,4 @@
-use pixels::wgpu::{self, util::DeviceExt, Device, Queue, RenderPass};
+use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 
 use crate::{selection::Bounds, wgpu_text::Matrix};
 
@@ -157,12 +157,14 @@ impl IconRenderer {
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Icon Atlas Bind Group Layout"),
             entries: &[
+                // Icon atlas sampler
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None
                 },
+                // Icon atlas texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -173,6 +175,7 @@ impl IconRenderer {
                     },
                     count: None
                 },
+                // Projection matrix
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::VERTEX,
@@ -317,7 +320,10 @@ impl IconRenderer {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        // Vertex position
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        // Instance position
+        rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         rpass.draw_indexed(0..6, 0, 0..self.icons().len() as u32);
     }
 
@@ -332,8 +338,25 @@ impl IconRenderer {
     }
 
     fn update_instance_buffer(&mut self, queue: &Queue) {
-        // TODO
-        unimplemented!()
+        let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
+            let icon_pos = if icon.selected {
+                if icon.hovered {
+                    icon.icon_selected_hovered_pos
+                } else {
+                    icon.icon_selected_pos
+                }
+            } else {
+                if icon.hovered {
+                    icon.icon_hovered_pos
+                } else {
+                    icon.icon_normal_pos
+                }
+            };
+
+            vec![icon.bounds.x as f32, icon.bounds.y as f32, icon_pos as f32, 0.0]
+        }).collect();
+
+        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instance_data));
     }
 
     pub fn resize_view(&self, width: f32, height: f32, queue: &wgpu::Queue) {
