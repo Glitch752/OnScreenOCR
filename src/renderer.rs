@@ -206,6 +206,9 @@ impl Renderer {
             multiview: None,
         });
 
+        let icon_renderer = IconRenderer::new(device);
+        icon_renderer.write_icon_atlas(pixels.queue());
+
         Ok(Self {
             texture,
             texture_view,
@@ -222,7 +225,7 @@ impl Renderer {
                 wgpu::TextureFormat::Bgra8UnormSrgb
             ),
             should_render_text: false,
-            icon_renderer: IconRenderer::new(device)
+            icon_renderer
         })
     }
 
@@ -273,6 +276,7 @@ impl Renderer {
         );
         
         self.text_brush.resize_view(width as f32, height as f32, pixels.queue());
+        self.icon_renderer.resize_view(width as f32, height as f32, pixels.queue());
 
         Ok(())
     }
@@ -308,6 +312,10 @@ impl Renderer {
                 glyph_brush::HorizontalAlign::Left
             ))
         }
+    }
+
+    pub(crate) fn click(&mut self, x: f32, y: f32) -> () {
+        self.icon_renderer.click((x as i32, y as i32));
     }
 
     pub(crate) fn update(
@@ -358,7 +366,7 @@ impl Renderer {
     }
 
     pub(crate) fn render(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         render_target: &wgpu::TextureView,
         clip_rect: (u32, u32, u32, u32),
