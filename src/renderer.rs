@@ -346,8 +346,8 @@ impl Renderer {
         self.text_brush.queue(device, queue, vec![&section]).unwrap();
     }
 
-    pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) {
-        self.icon_renderer.mouse_event(mouse_pos, state);
+    pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
+        self.icon_renderer.mouse_event(mouse_pos, state)
     }
 
     pub(crate) fn update(

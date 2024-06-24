@@ -369,8 +369,8 @@ impl IconRenderer {
         rpass.draw_indexed(0..6, 0, 0..self.icons().len() as u32);
     }
 
-    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) {
-        self.icons_mut().iter_mut().for_each(|icon| icon.mouse_event(mouse_pos, state));
+    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
+        self.icons_mut().iter_mut().any(|icon| icon.mouse_event(mouse_pos, state))
     }
 
     pub fn update(&mut self, queue: &Queue, mouse_pos: (i32, i32)) {
@@ -414,24 +414,29 @@ impl IconRenderer {
 }
 
 impl Icon {
-    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) {
+    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
         if self.bounds.contains(mouse_pos) {
             match self.behavior {
                 IconBehavior::Toggle => {
                     if state == ElementState::Pressed {
                         self.selected = !self.selected;
                     }
+                    true
                 }
                 IconBehavior::Click => {
                     self.selected = state == ElementState::Pressed;
                     if let Some(callback) = &self.click_callback {
                         callback();
                     }
+                    true
                 }
                 IconBehavior::Visual => {
                     // Doesn't matter
+                    false
                 }
             }
+        } else {
+            false
         }
     }
 

@@ -261,23 +261,27 @@ impl ApplicationHandler for App {
             } => match button {
                 winit::event::MouseButton::Left => {
                     let (x, y) = MouseCursor::pos();
-                    if state == winit::event::ElementState::Pressed {
-                        if !self.selection.shift_held {
-                            self.selection.bounds.x = x;
-                            self.selection.bounds.y = y;
-                            self.selection.bounds.width = 0;
-                            self.selection.bounds.height = 0;
+
+                    let was_handled = self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state);
+
+                    if !was_handled {
+                        if state == winit::event::ElementState::Pressed {
+                            if !self.selection.shift_held {
+                                self.selection.bounds.x = x;
+                                self.selection.bounds.y = y;
+                                self.selection.bounds.width = 0;
+                                self.selection.bounds.height = 0;
+                            } else {
+                                self.selection.start_drag_location = (x, y);
+                                self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
+                            }
+                            self.selection.mouse_down = true;
+                            self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                         } else {
-                            self.selection.start_drag_location = (x, y);
-                            self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
+                            self.selection.mouse_down = false;
                         }
-                        self.selection.mouse_down = true;
-                        self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
-                    } else {
-                        self.selection.mouse_down = false;
                     }
 
-                    self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state);
                     self.window_state.as_ref().unwrap().window.request_redraw();
                 }
                 _ => (),
