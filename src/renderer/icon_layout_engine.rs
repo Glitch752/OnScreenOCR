@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use super::icon_renderer::*;
 use super::Bounds;
 
+use glyph_brush::OwnedSection;
+use glyph_brush::OwnedText;
+
 pub const ICON_SIZE: f32 = 40.0;
 pub const ICON_MARGIN: f32 = 10.0;
 pub const TEXT_HEIGHT: f32 = 20.0;
@@ -88,13 +91,17 @@ impl IconLayouts {
         self.layouts.iter_mut().flat_map(|(_, sub_layout)| sub_layout.icons_mut()).collect()
     }
 
+    pub fn text_sections(&self) -> Vec<&OwnedSection> {
+        self.layouts.iter().flat_map(|(_, sub_layout)| sub_layout.text_sections()).collect()
+    }
+
     pub fn recalculate_positions(&mut self) -> () {
         for (_, sub_layout) in self.layouts.iter_mut() {
             sub_layout.recalculate_positions();
         }
     }
 
-    pub fn initialize(&mut self) {
+    pub fn initialize(& mut self) {
         for (_, sub_layout) in self.layouts.iter_mut() {
             sub_layout.initialize();
         }
@@ -129,6 +136,14 @@ impl PositionedLayout {
         match &mut self.layout {
             LayoutChild::Icon(icon) => vec!(icon),
             LayoutChild::Layout(layout) => layout.icons_mut(),
+            _ => Vec::new()
+        }
+    }
+
+    pub fn text_sections(&self) -> Vec<&OwnedSection> {
+        match &self.layout {
+            LayoutChild::Text(text) => vec!(&text.text_section),
+            LayoutChild::Layout(layout) => layout.text_sections(),
             _ => Vec::new()
         }
     }
@@ -201,8 +216,8 @@ pub(crate) struct Layout {
 }
 
 pub(crate) struct IconText {
-    string: String,
     bounds: Bounds,
+    text_section: OwnedSection,
     visible: bool
 }
 
@@ -211,8 +226,13 @@ impl IconText {
         // Approximate text size
         let bounds = Bounds::new(0, 0, string.len() as f32 * TEXT_HEIGHT / 2., TEXT_HEIGHT as i32);
         IconText {
-            string,
             bounds,
+            text_section: OwnedSection {
+                screen_position: (0.0, 0.0),
+                bounds: (f32::INFINITY, f32::INFINITY),
+                layout: glyph_brush::Layout::default(),
+                text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0])],
+            },
             visible: true
         }
     }
@@ -238,7 +258,7 @@ impl Layout {
         }
     }
 
-    pub fn initialize(&mut self) {
+    pub fn initialize(& mut self) {
         self.calculate_size();
         let primary_dimension = match self.direction {
             Direction::Horizontal => self.calculated_size.0,
@@ -248,6 +268,13 @@ impl Layout {
         let background_icons_required = if self.has_background { (primary_dimension / (ICON_SIZE * 0.9)).floor() as u32 } else { 0 };
         for _ in 0..background_icons_required {
             self.background_children.push(create_background!((0, 0)));
+        }
+
+        for child in self.children.iter_mut() {
+            match child {
+                LayoutChild::Layout(layout) => layout.initialize(),
+                _ => ()
+            }
         }
     }
 
@@ -278,6 +305,14 @@ impl Layout {
             LayoutChild::Layout(layout) => layout.icons_mut(),
             _ => Vec::new()
         })).collect()
+    }
+
+    pub fn text_sections(&self) -> Vec<&OwnedSection> {
+        self.children.iter().flat_map(|child| match child {
+            LayoutChild::Text(text) => vec!(&text.text_section),
+            LayoutChild::Layout(layout) => layout.text_sections(),
+            _ => Vec::new()
+        }).collect()
     }
 
     pub fn calculate_size(&mut self) -> (f32, f32) {

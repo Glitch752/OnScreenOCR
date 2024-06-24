@@ -422,9 +422,8 @@ impl IconRenderer {
         self.update_icon_position_buffer(queue);
     }
 
-    pub fn get_text_sections(&self) -> Vec<glyph_brush::Section> {
-        // TODO
-        vec![]
+    pub fn get_text_sections(&self) -> Vec<&glyph_brush::OwnedSection> {
+        self.icons.text_sections()
     }
 
     pub fn update_text_icon_positions(&mut self, pos: Option<(f32, f32)>) {

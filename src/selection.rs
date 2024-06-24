@@ -59,10 +59,6 @@ impl Bounds {
         self.y = y.lossy_into();
     }
 
-    pub fn get_center(&self) -> (i32, i32) {
-        (self.x + self.width / 2, self.y + self.height / 2)
-    }
-
     pub fn to_positive_size(&self) -> Bounds {
         let (mut x, mut y, mut width, mut height) = (self.x, self.y, self.width, self.height);
         if width < 0 {

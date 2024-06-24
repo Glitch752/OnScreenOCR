@@ -2,7 +2,7 @@ use icon_renderer::IconRenderer;
 use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
 };
-use glyph_brush::{HorizontalAlign, Section as TextSection, Text};
+use glyph_brush::{HorizontalAlign, OwnedSection, OwnedText};
 use winit::event::ElementState;
 use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush}};
 
@@ -316,12 +316,12 @@ impl Renderer {
         }
     }
 
-    pub(crate) fn update_ocr_preview(
+    pub(crate) fn get_ocr_section(
         &mut self,
         ocr_preview_text: Option<String>,
         window_size: (u32, u32),
         selection: Selection
-    ) -> Option<(f32, f32, glyph_brush::HorizontalAlign, String)> {
+    ) -> Option<OwnedSection> {
         self.should_render_text = false;
         if ocr_preview_text.is_none() {
             self.icon_renderer.update_text_icon_positions(None);
@@ -340,7 +340,11 @@ impl Renderer {
 
         self.should_render_text = true;
 
-        return Some((placement.0, placement.1, placement.2, text));
+        return Some(OwnedSection::default()
+            .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9]).with_scale(16.0))
+            .add_text(OwnedText::new(text).with_color([0.8, 0.8, 0.8, 0.6]).with_scale(18.0))
+            .with_screen_position((placement.0, placement.1 - 18.0))
+            .with_layout(glyph_brush::Layout::default().h_align(placement.2)));
     }
 
     pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
@@ -361,21 +365,11 @@ impl Renderer {
         let locals = Locals::new(selection, window_size, true);
 
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
-        let ocr_text = self.update_ocr_preview(ocr_preview_text, window_size, selection);
-        match ocr_text {
-            Some(placement) => {
-                let mut sections = vec![
-                    TextSection::default()
-                        .add_text(Text::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9]).with_scale(16.0))
-                        .add_text(Text::new(&placement.3).with_color([0.8, 0.8, 0.8, 0.6]).with_scale(18.0))
-                        .with_screen_position((placement.0, placement.1 - 18.0))
-                        .with_layout(glyph_brush::Layout::default().h_align(placement.2))
-                ];
-                sections.append(&mut self.icon_renderer.get_text_sections());
-                self.text_brush.queue(device, queue, sections).unwrap();
-            }
-            None => self.text_brush.queue(device, queue, self.icon_renderer.get_text_sections()).unwrap(),
+
+        if let Some(section) = self.get_ocr_section(ocr_preview_text, window_size, selection) {
+            self.text_brush.queue(device, queue, vec![&section]).unwrap();
         }
+        self.text_brush.queue(device, queue, self.icon_renderer.get_text_sections()).unwrap();
 
         self.icon_renderer.update(queue, relative_mouse_pos);
     }
