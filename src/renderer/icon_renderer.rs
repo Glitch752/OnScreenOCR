@@ -2,7 +2,7 @@ use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 use winit::event::ElementState;
 
 use crate::{selection::Bounds, wgpu_text::Matrix};
-use super::icon_layout_engine::{IconLayouts, Layout, LayoutChild, Direction, CrossJustify, create_icon, ICON_MARGIN, ICON_SIZE };
+use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, Layout, LayoutChild, ICON_MARGIN, ICON_SIZE };
 
 pub(crate) struct IconRenderer {
     pub icons: IconLayouts,
@@ -21,7 +21,7 @@ pub(crate) struct IconRenderer {
     pub instance_icon_position_buffer: wgpu::Buffer,
     pub instance_icon_state_buffer: wgpu::Buffer,
 
-    pub matrix_buffer: wgpu::Buffer,
+    pub matrix_buffer: wgpu::Buffer
 }
 
 pub(crate) enum IconBehavior {
@@ -87,7 +87,24 @@ impl IconRenderer {
         });
 
         let mut icon_layouts = IconLayouts::new();
-        icon_layouts.add_layout((width / 2., ICON_SIZE / 2. + 60.), LayoutChild::Layout(menubar_layout));
+        icon_layouts.add_layout(String::from("menubar"), (width / 2., ICON_SIZE / 2. + ICON_MARGIN), LayoutChild::Layout(menubar_layout));
+        icon_layouts.add_layout(
+            String::from("copy"),
+            (0., 0.), // Updated live
+            {
+                let mut icon = create_icon!("copy", IconBehavior::Click);
+                icon.bounds = Bounds {
+                    x: 0,
+                    y: 0,
+                    width: 25,
+                    height: 25
+                };
+                icon.click_callback = Some(Box::new(|| {
+                    println!("Copy clicked!");
+                }));
+                LayoutChild::Icon(icon)
+            }
+        );
 
         icon_layouts.initialize();
 
@@ -385,6 +402,14 @@ impl IconRenderer {
 
         self.update_icon_state_buffer(queue);
         self.update_icon_position_buffer(queue);
+    }
+
+    pub fn update_text_icon_positions(&mut self, pos: Option<(f32, f32)>) {
+        if pos.is_none() {
+            self.icons.set_center("copy", 0., -100.);
+            return;
+        }
+        self.icons.set_center("copy", pos.unwrap().0, pos.unwrap().1);
     }
 
     fn update_icon_position_buffer(&mut self, queue: &Queue) {

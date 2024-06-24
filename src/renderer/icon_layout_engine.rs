@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use super::icon_renderer::*;
 use super::Bounds;
 
-pub const ICON_SIZE: f32 = 50.0;
+pub const ICON_SIZE: f32 = 40.0;
 pub const ICON_MARGIN: f32 = 10.0;
 
 static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
@@ -53,36 +55,40 @@ macro_rules! create_background {
 }
 
 pub(crate) struct IconLayouts {
-    layouts: Vec<PositionedLayout>
+    layouts: HashMap<String, PositionedLayout>
 }
 
 impl IconLayouts {
     pub fn new() -> Self {
         IconLayouts {
-            layouts: Vec::new()
+            layouts: HashMap::new()
         }
     }
 
-    pub fn add_layout(&mut self, center_position: (f32, f32), layout: LayoutChild) {
-        self.layouts.push(PositionedLayout::new(center_position, layout));
+    pub fn add_layout(&mut self, label: String, center_position: (f32, f32), layout: LayoutChild) {
+        self.layouts.insert(label, PositionedLayout::new(center_position, layout));
+    }
+
+    pub fn set_center(&mut self, label: &str, x: f32, y: f32) {
+        self.layouts.get_mut(label).unwrap().set_center(x, y);
     }
 
     pub fn icons(&self) -> Vec<&Icon> {
-        self.layouts.iter().flat_map(|sub_layout| sub_layout.icons()).collect()
+        self.layouts.iter().flat_map(|(_, sub_layout)| sub_layout.icons()).collect()
     }
 
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
-        self.layouts.iter_mut().flat_map(|sub_layout| sub_layout.icons_mut()).collect()
+        self.layouts.iter_mut().flat_map(|(_, sub_layout)| sub_layout.icons_mut()).collect()
     }
 
     pub fn recalculate_positions(&mut self) -> () {
-        for sub_layout in self.layouts.iter_mut() {
+        for (_, sub_layout) in self.layouts.iter_mut() {
             sub_layout.recalculate_positions();
         }
     }
 
     pub fn initialize(&mut self) {
-        for sub_layout in self.layouts.iter_mut() {
+        for (_, sub_layout) in self.layouts.iter_mut() {
             sub_layout.initialize();
         }
     }
@@ -141,6 +147,10 @@ impl PositionedLayout {
             LayoutChild::Icon(_) => (),
             LayoutChild::Layout(layout) => layout.initialize()
         }
+    }
+
+    pub fn set_center(&mut self, x: f32, y: f32) {
+        self.center_position = (x, y);
     }
 }
 
@@ -225,13 +235,21 @@ impl Layout {
     }
 
     pub fn calculate_size(&mut self) -> (f32, f32) {
-        let mut width = 0.0;
-        let mut height = 0.0;
+        let mut width: f32 = 0.0;
+        let mut height: f32 = 0.0;
         for child in self.children.iter_mut() {
             match child {
                 LayoutChild::Icon(icon) => {
-                    width += icon.bounds.width as f32;
-                    height += icon.bounds.height as f32;
+                    match self.direction {
+                        Direction::Horizontal => {
+                            width += icon.bounds.width as f32 + self.spacing;
+                            height = height.max(icon.bounds.height as f32);
+                        }
+                        Direction::Vertical => {
+                            width = width.max(icon.bounds.width as f32);
+                            height += icon.bounds.height as f32 + self.spacing;
+                        }
+                    }
                 }
                 LayoutChild::Layout(layout) => {
                     let (child_width, child_height) = layout.calculate_size();

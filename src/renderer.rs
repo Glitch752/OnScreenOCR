@@ -2,7 +2,7 @@ use icon_renderer::IconRenderer;
 use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
 };
-use glyph_brush::{Text, Section as TextSection};
+use glyph_brush::{HorizontalAlign, Section as TextSection, Text};
 use winit::event::ElementState;
 use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush}};
 
@@ -326,15 +326,19 @@ impl Renderer {
     ) {
         self.should_render_text = false;
         if ocr_preview_text.is_none() {
+            self.icon_renderer.update_text_icon_positions(None);
             return;
         }
 
         let text = ocr_preview_text.unwrap();
         let placement = self.get_preview_text_placement(window_size, selection.bounds, text.lines().count() as i32);
         if placement.is_none() {
+            self.icon_renderer.update_text_icon_positions(None);
             return;
         }
         let placement = placement.unwrap();
+        
+        self.icon_renderer.update_text_icon_positions(Some((placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 18.0)));
 
         self.should_render_text = true;
 
