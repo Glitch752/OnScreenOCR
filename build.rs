@@ -27,18 +27,29 @@ pub fn generate_atlas() -> () {
         .map(|path| image::open(path).unwrap())
         .collect::<Vec<_>>();
 
+    // TODO: Dramatically downscale images (512x512 -> something like 64x64 or, better yet, using the icon size constant)
+        
     let max_icon_size = icon_images.iter()
         .map(|img| img.dimensions())
-        .fold((0, 0), |(max_width, max_height), (width, height)| {
-            (max_width.max(width), max_height.max(height))
+        .fold(0, |max, (width, height)| {
+            max.max(width).max(height)
         });
 
+    assert!(max_icon_size.is_power_of_two());
+
+    let image_count = icon_images.len();
+    let min_image_width = (image_count as f32).sqrt().ceil() as u32;
+    let min_image_height = (image_count as f32 / min_image_width as f32).ceil() as u32;
+
     // Merge all of the images
-    let mut atlas = image::DynamicImage::new_rgba8(max_icon_size.0 * icon_images.len() as u32, max_icon_size.1);
+    let mut atlas = image::DynamicImage::new_rgba8(min_image_width * max_icon_size, min_image_height * max_icon_size);
     let mut image_name_to_position = std::collections::HashMap::new();
     for (i, img) in icon_images.iter().enumerate() {
-        atlas.copy_from(img, max_icon_size.0 * i as u32, 0).unwrap();
-        image_name_to_position.insert(icon_paths[i].file_name().unwrap().to_str().unwrap(), format!("{}", i as u32 * max_icon_size.0));
+        let x = (i as u32 % min_image_width) * max_icon_size;
+        let y = (i as u32 / min_image_width) * max_icon_size;
+
+        atlas.copy_from(img, x, y).unwrap();
+        image_name_to_position.insert(icon_paths[i].file_name().unwrap().to_str().unwrap().to_string(), format!("{} {}", x, y));
     }
 
     // Save the atlas
@@ -46,6 +57,7 @@ pub fn generate_atlas() -> () {
 
     // Save the image name to index map to atlas_positions.txt
     let mut file = std::fs::File::create("src/icons/atlas_positions.txt").unwrap();
+    file.write_all(format!("{} {} {}\n", max_icon_size, min_image_width, min_image_height).as_bytes()).unwrap();
     for (name, index) in image_name_to_position.iter() {
         file.write_all(format!("{} {}\n", name, index).as_bytes()).unwrap();
     }

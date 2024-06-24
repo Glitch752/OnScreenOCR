@@ -6,19 +6,19 @@ pub const ICON_MARGIN: f32 = 10.0;
 
 static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
 
-pub fn get_icon_atlas_pos(id: &str) -> u32 {
-    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().last().unwrap().parse().unwrap();
-    pos
+pub fn get_icon_atlas_pos(id: &str) -> (u32, u32) {
+    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().skip(1).collect::<Vec<&str>>();
+    (pos[0].parse().unwrap(), pos[1].parse().unwrap())
 }
 
 macro_rules! create_icon {
-    ($id:literal, $behavior:expr, $bounds:expr) => {
+    ($id:literal, $behavior:expr) => {
         {
             use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE };
             Icon {
                 hovered: false,
                 selected: false,
-                bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE, ICON_SIZE),
+                bounds: Bounds::new(0, 0, ICON_SIZE, ICON_SIZE),
                 behavior: $behavior,
                 click_callback: None,
 

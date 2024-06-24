@@ -1,13 +1,18 @@
-copy-hover.png 512
-copy-selected-hover.png 1024
-new-line-selected-hover.png 3072
-copy.png 2048
-new-line-selected.png 3584
-new-line-hover.png 2560
-settings-selected-hover.png 5120
-settings.png 6144
-new-line.png 4096
-settings-selected.png 5632
-background.png 0
-settings-hover.png 4608
-copy-selected.png 1536
+512 5 4
+fix-text-selected-hover.png 512 512
+copy-hover.png 512 0
+new-line-selected.png 512 1024
+background.png 0 0
+settings-selected.png 0 1536
+copy-selected.png 1536 0
+fix-text-selected.png 1024 512
+copy.png 2048 0
+settings-hover.png 1536 1024
+new-line-hover.png 2048 512
+fix-text-hover.png 0 512
+fix-text.png 1536 512
+new-line-selected-hover.png 0 1024
+new-line.png 1024 1024
+copy-selected-hover.png 1024 0
+settings.png 512 1536
+settings-selected-hover.png 2048 1024

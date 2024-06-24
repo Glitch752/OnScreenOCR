@@ -37,10 +37,10 @@ pub(crate) struct Icon {
     pub behavior: IconBehavior,
     pub click_callback: Option<Box<dyn Fn() -> ()>>,
 
-    pub(crate) icon_normal_pos: u32,
-    pub(crate) icon_hovered_pos: u32,
-    pub(crate) icon_selected_pos: u32,
-    pub(crate) icon_selected_hovered_pos: u32,
+    pub(crate) icon_normal_pos: (u32, u32),
+    pub(crate) icon_hovered_pos: (u32, u32),
+    pub(crate) icon_selected_pos: (u32, u32),
+    pub(crate) icon_selected_hovered_pos: (u32, u32),
 }
 
 macro_rules! image {
@@ -75,10 +75,11 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
 impl IconRenderer {
     pub fn new(device: &Device, width: f32, height: f32) -> Self {
         let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-        menubar_layout.add_icon(create_icon!("new-line", IconBehavior::Toggle, (0, 0)));
-        menubar_layout.add_icon(create_icon!("settings", IconBehavior::Click, (0, 0)));
+        menubar_layout.add_icon(create_icon!("new-line", IconBehavior::Toggle));
+        menubar_layout.add_icon(create_icon!("fix-text", IconBehavior::Toggle));
+        menubar_layout.add_icon(create_icon!("settings", IconBehavior::Click));
         menubar_layout.add_icon({
-            let mut icon = create_icon!("copy", IconBehavior::Click, (0, 0));
+            let mut icon = create_icon!("copy", IconBehavior::Click);
             icon.click_callback = Some(Box::new(|| {
                 println!("Copy clicked!");
             }));
@@ -91,13 +92,16 @@ impl IconRenderer {
         icon_layouts.initialize();
 
         let icon_count = icon_layouts.icons().len();
-        let icon_variant_count = 13; // Needs to be manually defined for now; some icons have multiple variants and some are ued multiple times
 
         let icon_atlas = image!("../icons/atlas.png");
 
-        // TODO: This could be stored at build time
-        let icon_atlas_height = 512;
-        let icon_atlas_width = icon_variant_count * 512;
+        let atlas_metadata = include_str!("../icons/atlas_positions.txt").lines().next().expect("Atlas positions file is empty").split_whitespace().collect::<Vec<_>>();
+        let icon_size =
+            atlas_metadata.get(0).expect("Atlas metadata doesn't include icon size").parse::<u32>().expect("Unable to parse atlas metadata icon size");
+        let icon_atlas_width =
+            atlas_metadata.get(1).expect("Atlas metadata doesn't include atlas width").parse::<u32>().expect("Unable to parse atlas metadata atlas width") * icon_size;
+        let icon_atlas_height =
+            atlas_metadata.get(2).expect("Atlas metadata doesn't include atlas height").parse::<u32>().expect("Unable to parse atlas metadata atlas height") * icon_size;
 
         let icon_atlas_texture = create_texture(device, icon_atlas_width, icon_atlas_height);
         let icon_atlas_view = icon_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -122,9 +126,9 @@ impl IconRenderer {
             contents: bytemuck::cast_slice(&crate::wgpu_text::ortho(width, height)),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
         });
-        let icon_atlas_icons_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Icon Atlas Icons Buffer"), // u32
-            contents: bytemuck::cast_slice(&[icon_variant_count]),
+        let icon_atlas_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Icon Atlas Icons Buffer"), // vec2<u32>
+            contents: bytemuck::cast_slice(&[icon_atlas_width / icon_size, icon_atlas_height / icon_size]),
             usage: wgpu::BufferUsages::UNIFORM
         });
 
@@ -154,8 +158,8 @@ impl IconRenderer {
             mapped_at_creation: false
         });
         let instance_icon_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Icon Atlas Instance State Buffer"),
-            size: (icon_count * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
+            label: Some("Icon Atlas Instance State Buffer"), // vec2<f32>
+            size: (2 * icon_count * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false
         });
@@ -202,7 +206,8 @@ impl IconRenderer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: std::num::NonZeroU64::new(
-                            std::mem::size_of::<u32>() as wgpu::BufferAddress,
+                            // vec2<u32>
+                            2 * std::mem::size_of::<u32>() as wgpu::BufferAddress,
                         ),
                     },
                     count: None
@@ -226,7 +231,7 @@ impl IconRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: icon_atlas_icons_buffer.as_entire_binding(),
+                    resource: icon_atlas_size_buffer.as_entire_binding(),
                 }
             ],
             label: Some("Icon Atlas Bind Group")
@@ -257,7 +262,7 @@ impl IconRenderer {
                         }
                     ]
                 }, wgpu::VertexBufferLayout {
-                    // Icon position and size (shouldn't change frequently)
+                    // Icon position and size
                     // x, y, width, height
                     array_stride: 4 * std::mem::size_of::<f32>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Instance,
@@ -269,12 +274,12 @@ impl IconRenderer {
                         }
                     ]
                 }, wgpu::VertexBufferLayout {
-                    // Icon state (will change frequently)
-                    array_stride: std::mem::size_of::<f32>() as wgpu::BufferAddress,
+                    // Icon atlas position
+                    array_stride: 2 * std::mem::size_of::<f32>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
                         wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32,
+                            format: wgpu::VertexFormat::Float32x2,
                             offset: 0,
                             shader_location: 2
                         }
@@ -391,14 +396,17 @@ impl IconRenderer {
     }
 
     fn update_icon_state_buffer(&mut self, queue: &Queue) {
-        let instance_data: Vec<f32> = self.icons().iter().map(|icon| {
+        let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
             let active_icon_pos = match (icon.selected, icon.hovered) {
                 (true, true) => icon.icon_selected_hovered_pos,
                 (true, false) => icon.icon_selected_pos,
                 (false, true) => icon.icon_hovered_pos,
                 (false, false) => icon.icon_normal_pos
             };
-            active_icon_pos as f32 / self.icon_atlas_width as f32
+            vec![
+                active_icon_pos.0 as f32 / self.icon_atlas_width as f32,
+                active_icon_pos.1 as f32 / self.icon_atlas_height as f32
+            ]
         }).collect();
 
         queue.write_buffer(&self.instance_icon_state_buffer, 0, bytemuck::cast_slice(&instance_data));
