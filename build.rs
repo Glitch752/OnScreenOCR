@@ -3,6 +3,9 @@ use std::io::Write;
 
 use image::{GenericImage, GenericImageView};
 
+// Looks best if it's a multiple of the icon size in icon_layout_engine.rs
+const DOWNSCALE_SIZE: f32 = 80.0;
+
 fn main() {  
     let generate_icon_atlas = env::var("GENERATE_ICON_ATLAS")
         .map(|v| v == "1")
@@ -27,15 +30,20 @@ pub fn generate_atlas() -> () {
         .map(|path| image::open(path).unwrap())
         .collect::<Vec<_>>();
 
-    // TODO: Dramatically downscale images (512x512 -> something like 64x64 or, better yet, using the icon size constant)
+    // Dramatically downscale images (512x512 -> ICON_SIZE x ICON_SIZE)
+    let icon_images = icon_images.iter()
+        .map(|img| {
+            let (width, height) = img.dimensions();
+            let scale = DOWNSCALE_SIZE / width as f32;
+            img.resize((width as f32 * scale) as u32, (height as f32 * scale) as u32, image::imageops::FilterType::Nearest)
+        })
+        .collect::<Vec<_>>();
         
     let max_icon_size = icon_images.iter()
         .map(|img| img.dimensions())
         .fold(0, |max, (width, height)| {
             max.max(width).max(height)
         });
-
-    assert!(max_icon_size.is_power_of_two());
 
     let image_count = icon_images.len();
     let min_image_width = (image_count as f32).sqrt().ceil() as u32;
