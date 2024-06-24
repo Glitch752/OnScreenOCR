@@ -12,7 +12,6 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Train custom OCR model for better results
 - [ ] Add support for other languages
 - [ ] Test and add support for MacOS and Linux
-- [ ] Add support for multiple monitors
 - [ ] Tooltips when hovering over buttons
 - [ ] Feedback for copying to clipboard
 

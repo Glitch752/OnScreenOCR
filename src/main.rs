@@ -105,11 +105,6 @@ impl ApplicationHandler for App {
             let screenshot = screenshot_from_handle(
                 monitor.clone().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
             );
-
-            // Temporary: save the screenshot
-            let image: image::ImageBuffer<image::Rgba<_>, _> = image::ImageBuffer::from_raw(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).unwrap();
-            image.save("screenshot.png").unwrap();
-
             self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
 
             // Create the window
@@ -157,8 +152,42 @@ impl ApplicationHandler for App {
 
             println!("Done initializing");
         } else {
-            // Show the window
+            // Move the window to the monitor with the mouse
+            let global_mouse_position = MouseCursor::pos();
+            let monitor = event_loop.available_monitors().find(|monitor| {
+                monitor.position().x <= global_mouse_position.0
+                    && monitor.position().x + monitor.size().width as i32 >= global_mouse_position.0
+                    && monitor.position().y <= global_mouse_position.1
+                    && monitor.position().y + monitor.size().height as i32 >= global_mouse_position.1
+            });
+
             let window_state = self.window_state.as_mut().unwrap();
+            let window = &window_state.window;
+
+            // If the window is already open and on the same monitor, just hide it
+            if window.is_visible() == Some(true) && window.current_monitor() == monitor {
+                window.set_visible(false);
+                return;
+            }
+            
+            window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+            window.set_visible(false);
+
+            let new_size = window.inner_size();
+            if self.size != (new_size.width, new_size.height) {
+                self.size = (new_size.width, new_size.height);
+                let pixels = &mut window_state.pixels;
+                let shader_renderer = &mut window_state.shader_renderer;
+
+                pixels.resize_surface(new_size.width, new_size.height).expect("Unable to resize pixels surface");
+                pixels.resize_buffer(new_size.width, new_size.height).expect("Unable to resize pixels buffer");
+
+                let screenshot = screenshot_from_handle(
+                    window.current_monitor().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
+                );
+                shader_renderer.resize(pixels, new_size.width, new_size.height, screenshot.bytes.as_slice()).expect("Unable to resize shader renderer");
+            }
+
             let pixels = &window_state.pixels;
             let shader_renderer = &mut window_state.shader_renderer;
             
@@ -288,7 +317,15 @@ impl ApplicationHandler for App {
                 button,
             } => match button {
                 winit::event::MouseButton::Left => {
-                    let (x, y) = MouseCursor::pos();
+                    let (x, y) = {
+                        // We use the gobal mouse position and make it relative instead of the relative one
+                        // because the relative one can only be set when the mouse moves and it's possible
+                        // to click before then.
+                        let pos = MouseCursor::pos();
+                        let window = &self.window_state.as_ref().unwrap().window;
+                        let window_pos = window.inner_position().unwrap_or_default();
+                        (pos.0 - window_pos.x, pos.1 - window_pos.y)
+                    };
 
                     let was_handled = self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state);
 
@@ -345,39 +382,6 @@ impl ApplicationHandler for App {
                 self.window_state.as_ref().unwrap().window.request_redraw();
 
                 self.ocr_handler.selection_changed(self.selection);
-            },
-            WindowEvent::Resized(new_size) => {
-                if self.window_state.is_none() {
-                    return; // Probably shouldn't happen; just in case
-                }
-
-                let window_state = self.window_state.as_mut().unwrap();
-
-                // If size is not equal to the size of the monitor the window is on, it's still initializing
-                let window = &window_state.window;
-                let monitor_size = window.current_monitor().unwrap().size();
-                if new_size.width != monitor_size.width || new_size.height != monitor_size.height {
-                    return;
-                }
-
-                // If the size is equal to our current size, don't do anything
-                if new_size.width == self.size.0 && new_size.height == self.size.1 {
-                    return;
-                }
-
-                println!("Resized to {:?}", new_size);
-
-                self.size = (new_size.width, new_size.height);
-                let pixels = &mut window_state.pixels;
-                let shader_renderer = &mut window_state.shader_renderer;
-
-                pixels.resize_surface(new_size.width, new_size.height).expect("Unable to resize pixels surface");
-                pixels.resize_buffer(new_size.width, new_size.height).expect("Unable to resize pixels buffer");
-
-                let screenshot = screenshot_from_handle(
-                    window.current_monitor().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
-                );
-                shader_renderer.resize(pixels, new_size.width, new_size.height, screenshot.bytes.as_slice()).expect("Unable to resize shader renderer");
             }
             _ => (),
         }
