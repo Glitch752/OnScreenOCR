@@ -84,7 +84,6 @@ macro_rules! horizontal_setting_layout {
             layout
         }
     };
-
 }
 
 impl IconRenderer {

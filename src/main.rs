@@ -11,12 +11,14 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Fullscreen, Window, WindowId, WindowLevel};
+use settings::SettingsManager;
 
 mod ocr_handler;
 mod renderer;
 mod screenshot;
 mod selection;
 mod wgpu_text;
+mod settings;
 
 fn main() {
     // Only run event loop on user interaction
@@ -54,6 +56,7 @@ struct App {
     selection: Selection,
     ocr_handler: OCRHandler,
     relative_mouse_pos: (i32, i32),
+    settings_manager: SettingsManager,
 }
 
 impl App {
@@ -255,6 +258,7 @@ impl ApplicationHandler for App {
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
                         window.set_visible(false);
+                        self.settings_manager.save();
                     }
                     Key::Named(NamedKey::Shift) => {
                         self.selection.shift_held =
