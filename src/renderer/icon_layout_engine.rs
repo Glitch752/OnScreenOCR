@@ -160,6 +160,7 @@ impl PositionedLayout {
             }
             LayoutChild::Text(text) => {
                 text.bounds.set_center(self.center_position.0, self.center_position.1);
+                text.update_section_position();
             }
             LayoutChild::Layout(layout) => {
                 layout.calculated_position = self.center_position;
@@ -235,6 +236,10 @@ impl IconText {
             },
             visible: true
         }
+    }
+
+    pub fn update_section_position(&mut self) {
+        self.text_section.screen_position = (self.bounds.x as f32, self.bounds.y as f32);
     }
 }
 
@@ -336,12 +341,12 @@ impl Layout {
                     let (child_width, child_height) = layout.calculate_size();
                     match self.direction {
                         Direction::Horizontal => {
-                            width += child_width;
+                            width += child_width + self.spacing;
                             height = height.max(child_height);
                         }
                         Direction::Vertical => {
                             width = width.max(child_width);
-                            height += child_height;
+                            height += child_height + self.spacing;
                         }
                     }
                 }
@@ -401,7 +406,14 @@ impl Layout {
                 LayoutChild::Layout(layout) => {
                     layout.calculated_position = top_left_position;
                     layout.calculate_child_positions();
-                    top_left_position.0 += layout.calculated_size.0 + self.spacing;
+                    match self.direction {
+                        Direction::Horizontal => {
+                            top_left_position.0 += layout.calculated_size.0 + self.spacing;
+                        }
+                        Direction::Vertical => {
+                            top_left_position.1 += layout.calculated_size.1 + self.spacing;
+                        }
+                    }
                 }
                 LayoutChild::Text(text) => {
                     match self.direction {
@@ -414,6 +426,7 @@ impl Layout {
                             top_left_position.1 += text.bounds.height as f32 + self.spacing;
                         }
                     }
+                    text.update_section_position();
                 }
             }
         }

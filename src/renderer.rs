@@ -322,7 +322,6 @@ impl Renderer {
         window_size: (u32, u32),
         selection: Selection
     ) -> Option<OwnedSection> {
-        self.should_render_text = false;
         if ocr_preview_text.is_none() {
             self.icon_renderer.update_text_icon_positions(None);
             return None;
@@ -337,8 +336,6 @@ impl Renderer {
         let placement = placement.unwrap();
         
         self.icon_renderer.update_text_icon_positions(Some((placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 18.0)));
-
-        self.should_render_text = true;
 
         return Some(OwnedSection::default()
             .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9]).with_scale(16.0))
@@ -366,10 +363,14 @@ impl Renderer {
 
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
 
+        self.should_render_text = false;
         if let Some(section) = self.get_ocr_section(ocr_preview_text, window_size, selection) {
             self.text_brush.queue(device, queue, vec![&section]).unwrap();
+            self.should_render_text = true;
         }
-        self.text_brush.queue(device, queue, self.icon_renderer.get_text_sections()).unwrap();
+        let icon_text_sections = self.icon_renderer.get_text_sections();
+        self.should_render_text = self.should_render_text || icon_text_sections.len() > 0;
+        self.text_brush.queue(device, queue, icon_text_sections).unwrap();
 
         self.icon_renderer.update(queue, relative_mouse_pos);
     }
@@ -403,11 +404,11 @@ impl Renderer {
 
         self.render_background(&mut rpass, clip_rect);
         
+        self.icon_renderer.render(&mut rpass);
+        
         if self.should_render_text {
             self.text_brush.draw(&mut rpass);
         }
-
-        self.icon_renderer.render(&mut rpass);
     }
 }
 

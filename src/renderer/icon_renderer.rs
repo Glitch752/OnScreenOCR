@@ -99,7 +99,7 @@ impl IconRenderer {
             icon
         });
 
-        let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN, true);
+        let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 2., false);
         settings_layout.add_layout(horizontal_setting_layout!("Test setting 1", create_icon!("settings", IconBehavior::Click)));
         settings_layout.add_layout(horizontal_setting_layout!("Test setting 2", create_icon!("new-line", IconBehavior::Click)));
 
