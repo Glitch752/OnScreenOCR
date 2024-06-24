@@ -9,6 +9,7 @@ use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, Brush
 use crate::{screenshot::Screenshot, selection::Selection};
 
 mod icon_renderer;
+mod icon_layout_engine;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
