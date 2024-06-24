@@ -173,12 +173,12 @@ impl IconRenderer {
         let icon_atlas = image!("../icons/atlas.png");
 
         let atlas_metadata = include_str!("../icons/atlas_positions.txt").lines().next().expect("Atlas positions file is empty").split_whitespace().collect::<Vec<_>>();
-        let icon_size =
+        let atlas_icon_size =
             atlas_metadata.get(0).expect("Atlas metadata doesn't include icon size").parse::<u32>().expect("Unable to parse atlas metadata icon size");
         let icon_atlas_width =
-            atlas_metadata.get(1).expect("Atlas metadata doesn't include atlas width").parse::<u32>().expect("Unable to parse atlas metadata atlas width") * icon_size;
+            atlas_metadata.get(1).expect("Atlas metadata doesn't include atlas width").parse::<u32>().expect("Unable to parse atlas metadata atlas width") * atlas_icon_size;
         let icon_atlas_height =
-            atlas_metadata.get(2).expect("Atlas metadata doesn't include atlas height").parse::<u32>().expect("Unable to parse atlas metadata atlas height") * icon_size;
+            atlas_metadata.get(2).expect("Atlas metadata doesn't include atlas height").parse::<u32>().expect("Unable to parse atlas metadata atlas height") * atlas_icon_size;
 
         let icon_atlas_texture = create_texture(device, icon_atlas_width, icon_atlas_height);
         let icon_atlas_view = icon_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -205,7 +205,7 @@ impl IconRenderer {
         });
         let icon_atlas_size_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Icon Atlas Icons Buffer"), // vec2<u32>
-            contents: bytemuck::cast_slice(&[icon_atlas_width / icon_size, icon_atlas_height / icon_size]),
+            contents: bytemuck::cast_slice(&[icon_atlas_width / atlas_icon_size, icon_atlas_height / atlas_icon_size]),
             usage: wgpu::BufferUsages::UNIFORM
         });
 
@@ -235,8 +235,8 @@ impl IconRenderer {
             mapped_at_creation: false
         });
         let instance_icon_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Icon Atlas Instance State Buffer"), // vec2<f32>
-            size: (2 * icon_count * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
+            label: Some("Icon Atlas Instance State Buffer"), // vec3<f32>
+            size: (3 * icon_count * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false
         });
@@ -351,12 +351,12 @@ impl IconRenderer {
                         }
                     ]
                 }, wgpu::VertexBufferLayout {
-                    // Icon atlas position
-                    array_stride: 2 * std::mem::size_of::<f32>() as wgpu::BufferAddress,
+                    // Icon atlas position, opacity
+                    array_stride: 3 * std::mem::size_of::<f32>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
                         wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float32x3,
                             offset: 0,
                             shader_location: 2
                         }
@@ -372,12 +372,18 @@ impl IconRenderer {
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     blend: Some(wgpu::BlendState {
+                        // result = operation((src * srcFactor),  (dst * dstFactor))
+                        // Where src is value from fragment shader and dst is value already in the texture
                         color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add
                         },
-                        alpha: wgpu::BlendComponent::OVER
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Min,
+                        }
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -488,9 +494,6 @@ impl IconRenderer {
 
     fn update_icon_position_buffer(&mut self, queue: &Queue) {
         let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
-            if !icon.visible {
-                return vec![0.0; 4];
-            }
             vec![icon.bounds.x as f32, icon.bounds.y as f32, icon.bounds.width as f32, icon.bounds.height as f32]
         }).collect();
 
@@ -507,7 +510,8 @@ impl IconRenderer {
             };
             vec![
                 active_icon_pos.0 as f32 / self.icon_atlas_width as f32,
-                active_icon_pos.1 as f32 / self.icon_atlas_height as f32
+                active_icon_pos.1 as f32 / self.icon_atlas_height as f32,
+                if icon.visible { 1.0 } else { 0.0 }
             ]
         }).collect();
 
@@ -526,7 +530,7 @@ impl IconRenderer {
 
 impl Icon {
     pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
-        if self.bounds.contains(mouse_pos) {
+        if self.bounds.contains(mouse_pos) && self.visible {
             match self.behavior {
                 IconBehavior::Click | IconBehavior::SettingToggle => {
                     if let Some(callback) = &self.click_callback {

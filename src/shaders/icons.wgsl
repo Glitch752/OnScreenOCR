@@ -2,6 +2,7 @@
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coord: vec2<f32>,
+    @location(1) opacity: f32
 }
 
 struct Matrix {
@@ -17,11 +18,12 @@ var<uniform> atlas_dimensions: vec2<u32>;
 fn vs_main(
     @location(0) position: vec2<f32>,
     @location(1) instance_position: vec4<f32>, // Icon x, icon y, icon width, icon height
-    @location(2) icon_state: vec2<f32> // Icon atlas position
+    @location(2) icon_state: vec3<f32> // Icon atlas position, icon opacity
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.tex_coord = position / vec2<f32>(atlas_dimensions) + icon_state;
+    out.tex_coord = position / vec2<f32>(atlas_dimensions) + icon_state.xy;
     out.clip_position = ortho.v * vec4<f32>(position * instance_position.zw + instance_position.xy, 0.0, 1.0);
+    out.opacity = icon_state.z;
     return out;
 }
 
@@ -31,7 +33,10 @@ fn vs_main(
 
 @fragment
 fn fs_main(
-    @location(0) tex_coord: vec2<f32>
+    @location(0) tex_coord: vec2<f32>,
+    @location(1) opacity: f32
 ) -> @location(0) vec4<f32> {
-    return textureSample(r_icon_texture, r_icon_sampler, tex_coord);
+    var color = textureSample(r_icon_texture, r_icon_sampler, tex_coord);
+    color.a *= opacity;
+    return color;
 }
