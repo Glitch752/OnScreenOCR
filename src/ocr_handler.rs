@@ -65,7 +65,11 @@ impl OCRHandler {
 
     pub fn update_ocr_preview_text(&mut self) {
         if let Some(text) = self.get_ocr_result() {
-            self.ocr_preview_text = Some(text);
+            if text.is_empty() {
+                self.ocr_preview_text = None;
+            } else {
+                self.ocr_preview_text = Some(text);
+            }
         }
     }
 

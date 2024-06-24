@@ -5,6 +5,7 @@ use super::Bounds;
 
 pub const ICON_SIZE: f32 = 40.0;
 pub const ICON_MARGIN: f32 = 10.0;
+pub const TEXT_HEIGHT: f32 = 20.0;
 
 static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
 
@@ -23,6 +24,7 @@ macro_rules! create_icon {
                 bounds: Bounds::new(0, 0, ICON_SIZE, ICON_SIZE),
                 behavior: $behavior,
                 click_callback: None,
+                visible: true,
 
                 icon_normal_pos: get_icon_atlas_pos(concat!($id, ".png")),
                 icon_hovered_pos: get_icon_atlas_pos(concat!($id, "-hover.png")),
@@ -44,6 +46,7 @@ macro_rules! create_background {
                 bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE + ICON_MARGIN, ICON_SIZE + ICON_MARGIN),
                 behavior: IconBehavior::Visual,
                 click_callback: None,
+                visible: true,
 
                 icon_normal_pos: get_icon_atlas_pos("background.png"),
                 icon_hovered_pos: get_icon_atlas_pos("background.png"),
@@ -71,6 +74,10 @@ impl IconLayouts {
 
     pub fn set_center(&mut self, label: &str, x: f32, y: f32) {
         self.layouts.get_mut(label).unwrap().set_center(x, y);
+    }
+
+    pub fn set_visible(&mut self, label: &str, visible: bool) {
+        self.layouts.get_mut(label).unwrap().set_visible(visible);
     }
 
     pub fn icons(&self) -> Vec<&Icon> {
@@ -113,14 +120,16 @@ impl PositionedLayout {
     pub fn icons(&self) -> Vec<&Icon> {
         match &self.layout {
             LayoutChild::Icon(icon) => vec!(icon),
-            LayoutChild::Layout(layout) => layout.icons()
+            LayoutChild::Layout(layout) => layout.icons(),
+            _ => Vec::new()
         }
     }
 
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
         match &mut self.layout {
             LayoutChild::Icon(icon) => vec!(icon),
-            LayoutChild::Layout(layout) => layout.icons_mut()
+            LayoutChild::Layout(layout) => layout.icons_mut(),
+            _ => Vec::new()
         }
     }
 
@@ -134,6 +143,9 @@ impl PositionedLayout {
             LayoutChild::Icon(icon) => {
                 icon.bounds.set_center(self.center_position.0, self.center_position.1);
             }
+            LayoutChild::Text(text) => {
+                text.bounds.set_center(self.center_position.0, self.center_position.1);
+            }
             LayoutChild::Layout(layout) => {
                 layout.calculated_position = self.center_position;
                 layout.calculate_size();
@@ -144,13 +156,21 @@ impl PositionedLayout {
 
     pub fn initialize(&mut self) {
         match &mut self.layout {
-            LayoutChild::Icon(_) => (),
-            LayoutChild::Layout(layout) => layout.initialize()
+            LayoutChild::Layout(layout) => layout.initialize(),
+            _ => ()
         }
     }
 
     pub fn set_center(&mut self, x: f32, y: f32) {
         self.center_position = (x, y);
+    }
+
+    pub fn set_visible(&mut self, visible: bool) {
+        match &mut self.layout {
+            LayoutChild::Icon(icon) => icon.visible = visible,
+            LayoutChild::Text(text) => text.visible = visible,
+            LayoutChild::Layout(layout) => layout.set_visible(visible)
+        }
     }
 }
 
@@ -180,8 +200,27 @@ pub(crate) struct Layout {
     calculated_size: (f32, f32)
 }
 
+pub(crate) struct IconText {
+    string: String,
+    bounds: Bounds,
+    visible: bool
+}
+
+impl IconText {
+    pub fn new(string: String) -> Self {
+        // Approximate text size
+        let bounds = Bounds::new(0, 0, string.len() as f32 * TEXT_HEIGHT / 2., TEXT_HEIGHT as i32);
+        IconText {
+            string,
+            bounds,
+            visible: true
+        }
+    }
+}
+
 pub(crate) enum LayoutChild {
     Icon(Icon),
+    Text(IconText),
     Layout(Layout)
 }
 
@@ -200,16 +239,13 @@ impl Layout {
     }
 
     pub fn initialize(&mut self) {
-        let mut icon_children_count = 0;
-        for child in self.children.iter_mut() {
-            match child {
-                LayoutChild::Icon(_) => icon_children_count += 1,
-                LayoutChild::Layout(layout) => layout.initialize()
-            }
-        }
-        
-        // There is 1 background child for every icon and 1 for every space between icons
-        let background_icons_required = if self.has_background { icon_children_count * 2 - 1 } else { 0 };
+        self.calculate_size();
+        let primary_dimension = match self.direction {
+            Direction::Horizontal => self.calculated_size.0,
+            Direction::Vertical => self.calculated_size.1
+        };
+        // There is 1 background child for every (ICON_SIZE * 0.9) length and 1 for every space between icons
+        let background_icons_required = if self.has_background { (primary_dimension / (ICON_SIZE * 0.9)).floor() as u32 } else { 0 };
         for _ in 0..background_icons_required {
             self.background_children.push(create_background!((0, 0)));
         }
@@ -219,18 +255,28 @@ impl Layout {
         self.children.push(LayoutChild::Icon(icon));
     }
 
+    pub fn add_text(&mut self, text: IconText) {
+        self.children.push(LayoutChild::Text(text));
+    }
+
+    pub fn add_layout(&mut self, layout: Layout) {
+        self.children.push(LayoutChild::Layout(layout));
+    }
+
     pub fn icons(&self) -> Vec<&Icon> {
         // Make sure to return background icons first
         self.background_children.iter().chain(self.children.iter().flat_map(|child| match child {
             LayoutChild::Icon(icon) => vec!(icon),
-            LayoutChild::Layout(layout) => layout.icons()
+            LayoutChild::Layout(layout) => layout.icons(),
+            _ => Vec::new()
         })).collect()
     }
 
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
         self.background_children.iter_mut().chain(self.children.iter_mut().flat_map(|child| match child {
             LayoutChild::Icon(icon) => vec!(icon),
-            LayoutChild::Layout(layout) => layout.icons_mut()
+            LayoutChild::Layout(layout) => layout.icons_mut(),
+            _ => Vec::new()
         })).collect()
     }
 
@@ -239,15 +285,15 @@ impl Layout {
         let mut height: f32 = 0.0;
         for child in self.children.iter_mut() {
             match child {
-                LayoutChild::Icon(icon) => {
+                LayoutChild::Icon(Icon { bounds, .. }) | LayoutChild::Text(IconText { bounds, .. }) => {
                     match self.direction {
                         Direction::Horizontal => {
-                            width += icon.bounds.width as f32 + self.spacing;
-                            height = height.max(icon.bounds.height as f32);
+                            width += bounds.width as f32 + self.spacing;
+                            height = height.max(bounds.height as f32);
                         }
                         Direction::Vertical => {
-                            width = width.max(icon.bounds.width as f32);
-                            height += icon.bounds.height as f32 + self.spacing;
+                            width = width.max(bounds.width as f32);
+                            height += bounds.height as f32 + self.spacing;
                         }
                     }
                 }
@@ -266,6 +312,17 @@ impl Layout {
                 }
             }
         }
+        
+        // Remove the extra padding added from the last item
+        match self.direction {
+            Direction::Horizontal => {
+                width -= self.spacing;
+            }
+            Direction::Vertical => {
+                height -= self.spacing;
+            }
+        }
+
         self.calculated_size = (width, height);
         (width, height)
     }
@@ -311,6 +368,18 @@ impl Layout {
                     layout.calculate_child_positions();
                     top_left_position.0 += layout.calculated_size.0 + self.spacing;
                 }
+                LayoutChild::Text(text) => {
+                    match self.direction {
+                        Direction::Horizontal => {
+                            text.bounds.set_origin(top_left_position.0, top_left_position.1 + (self.calculated_size.1 - text.bounds.height as f32) / 2.);
+                            top_left_position.0 += text.bounds.width as f32 + self.spacing;
+                        }
+                        Direction::Vertical => {
+                            text.bounds.set_origin(top_left_position.0 + (self.calculated_size.0 - text.bounds.width as f32) / 2., top_left_position.1);
+                            top_left_position.1 += text.bounds.height as f32 + self.spacing;
+                        }
+                    }
+                }
             }
         }
 
@@ -318,24 +387,32 @@ impl Layout {
             return;
         }
 
-        let mut last_position: Option<(i32, i32)> = None;
-        let mut background_icon_index = 0;
-        let icon_children = self.children.iter().filter_map(|child| match child {
-            LayoutChild::Icon(icon) => Some(icon),
-            LayoutChild::Layout(_) => None
-        });
-        for icon in icon_children {
-            let icon_position = icon.bounds.get_center();
-            if let Some(last_position) = last_position {
-                let background = self.background_children.get_mut(background_icon_index).unwrap();
-                background.bounds.set_center((icon_position.0 + last_position.0) as f32 / 2., (icon_position.1 + last_position.1) as f32 / 2.);
-                background_icon_index += 1;
+        // Evenly space background icons
+        let mut top_left_position = (self.calculated_position.0 - self.calculated_size.0 / 2., self.calculated_position.1 - self.calculated_size.1 / 2.);
+        let background_children_count = self.background_children.len();
+        for background in self.background_children.iter_mut() {
+            background.bounds.set_center(top_left_position.0 + ICON_SIZE / 2., top_left_position.1 + ICON_SIZE / 2.);
+            match self.direction {
+                Direction::Horizontal => {
+                    top_left_position.0 += self.calculated_size.0 / background_children_count as f32;
+                }
+                Direction::Vertical => {
+                    top_left_position.1 += self.calculated_size.1 / background_children_count as f32;
+                }
             }
-            last_position = Some(icon_position);
+        }
+    }
 
-            let background = self.background_children.get_mut(background_icon_index).unwrap();
-            background.bounds.set_center(icon_position.0 as f32, icon_position.1 as f32);
-            background_icon_index += 1;
+    pub fn set_visible(&mut self, visible: bool) {
+        for child in self.children.iter_mut() {
+            match child {
+                LayoutChild::Icon(icon) => icon.visible = visible,
+                LayoutChild::Layout(layout) => layout.set_visible(visible),
+                LayoutChild::Text(_) => ()
+            }
+        }
+        for background in self.background_children.iter_mut() {
+            background.visible = visible;
         }
     }
 }

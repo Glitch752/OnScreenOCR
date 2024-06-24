@@ -2,7 +2,7 @@ use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 use winit::event::ElementState;
 
 use crate::{selection::Bounds, wgpu_text::Matrix};
-use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, Layout, LayoutChild, ICON_MARGIN, ICON_SIZE };
+use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, Layout, LayoutChild, IconText, ICON_MARGIN, ICON_SIZE };
 
 pub(crate) struct IconRenderer {
     pub icons: IconLayouts,
@@ -34,6 +34,7 @@ pub(crate) struct Icon {
     pub hovered: bool,
     pub selected: bool,
     pub bounds: Bounds,
+    pub visible: bool,
     pub behavior: IconBehavior,
     pub click_callback: Option<Box<dyn Fn() -> ()>>,
 
@@ -72,6 +73,18 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
     })
 }
 
+macro_rules! horizontal_setting_layout {
+    ($text:expr, $icon:expr) => {
+        {
+            let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
+            layout.add_text(IconText::new($text.to_string()));
+            layout.add_icon($icon);
+            layout
+        }
+    };
+
+}
+
 impl IconRenderer {
     pub fn new(device: &Device, width: f32, height: f32) -> Self {
         let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
@@ -86,8 +99,13 @@ impl IconRenderer {
             icon
         });
 
+        let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN, true);
+        settings_layout.add_layout(horizontal_setting_layout!("Test setting 1", create_icon!("settings", IconBehavior::Click)));
+        settings_layout.add_layout(horizontal_setting_layout!("Test setting 2", create_icon!("new-line", IconBehavior::Click)));
+
         let mut icon_layouts = IconLayouts::new();
         icon_layouts.add_layout(String::from("menubar"), (width / 2., ICON_SIZE / 2. + ICON_MARGIN), LayoutChild::Layout(menubar_layout));
+        icon_layouts.add_layout(String::from("settings"), (width / 2., height / 2.), LayoutChild::Layout(settings_layout));
         icon_layouts.add_layout(
             String::from("copy"),
             (0., 0.), // Updated live
@@ -404,16 +422,25 @@ impl IconRenderer {
         self.update_icon_position_buffer(queue);
     }
 
+    pub fn get_text_sections(&self) -> Vec<glyph_brush::Section> {
+        // TODO
+        vec![]
+    }
+
     pub fn update_text_icon_positions(&mut self, pos: Option<(f32, f32)>) {
         if pos.is_none() {
-            self.icons.set_center("copy", 0., -100.);
+            self.icons.set_visible("copy", false);
             return;
         }
+        self.icons.set_visible("copy", true);
         self.icons.set_center("copy", pos.unwrap().0, pos.unwrap().1);
     }
 
     fn update_icon_position_buffer(&mut self, queue: &Queue) {
         let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
+            if !icon.visible {
+                return vec![0.0; 4];
+            }
             vec![icon.bounds.x as f32, icon.bounds.y as f32, icon.bounds.width as f32, icon.bounds.height as f32]
         }).collect();
 
@@ -474,9 +501,6 @@ impl Icon {
     }
 
     pub fn update(&mut self, mouse_pos: (i32, i32)) {
-        // Update position
-        // TODO
-
         // Update hover
         self.hovered = self.bounds.contains(mouse_pos);
         // If not hovered and a click button, unselect
