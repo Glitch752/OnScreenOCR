@@ -149,7 +149,7 @@ impl PositionedLayout {
 
     pub fn text_sections(&self) -> Vec<&OwnedSection> {
         match &self.layout {
-            LayoutChild::Text(text) => vec!(&text.text_section),
+            LayoutChild::Text(text) => if text.visible { vec!(&text.text_section) } else { Vec::new() },
             LayoutChild::Layout(layout) => layout.text_sections(),
             _ => Vec::new()
         }
@@ -322,7 +322,7 @@ impl Layout {
 
     pub fn text_sections(&self) -> Vec<&OwnedSection> {
         self.children.iter().flat_map(|child| match child {
-            LayoutChild::Text(text) => vec!(&text.text_section),
+            LayoutChild::Text(text) => if text.visible { vec!(&text.text_section) } else { Vec::new() },
             LayoutChild::Layout(layout) => layout.text_sections(),
             _ => Vec::new()
         }).collect()
@@ -464,7 +464,7 @@ impl Layout {
             match child {
                 LayoutChild::Icon(icon) => icon.visible = visible,
                 LayoutChild::Layout(layout) => layout.set_visible(visible),
-                LayoutChild::Text(_) => ()
+                LayoutChild::Text(text) => text.visible = visible
             }
         }
         for background in self.background_children.iter_mut() {
