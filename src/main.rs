@@ -202,6 +202,10 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Shift) => {
                         self.selection.shift_held =
                             event.state == winit::event::ElementState::Pressed;
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.selection.start_drag_location = self.relative_mouse_pos;
+                            self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
+                        }
                     }
                     Key::Named(NamedKey::Control) => {
                         self.selection.ctrl_held =
@@ -258,10 +262,15 @@ impl ApplicationHandler for App {
                 winit::event::MouseButton::Left => {
                     let (x, y) = MouseCursor::pos();
                     if state == winit::event::ElementState::Pressed {
-                        self.selection.bounds.x = x;
-                        self.selection.bounds.y = y;
-                        self.selection.bounds.width = 0;
-                        self.selection.bounds.height = 0;
+                        if !self.selection.shift_held {
+                            self.selection.bounds.x = x;
+                            self.selection.bounds.y = y;
+                            self.selection.bounds.width = 0;
+                            self.selection.bounds.height = 0;
+                        } else {
+                            self.selection.start_drag_location = (x, y);
+                            self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
+                        }
                         self.selection.mouse_down = true;
                         self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                     } else {
@@ -294,8 +303,12 @@ impl ApplicationHandler for App {
                     self.selection.bounds.width = x - self.selection.bounds.x;
                     self.selection.bounds.height = y - self.selection.bounds.y;
                 } else {
-                    self.selection.bounds.x = x - self.selection.bounds.width;
-                    self.selection.bounds.y = y - self.selection.bounds.height;
+                    let (start_x, start_y) = self.selection.start_drag_location;
+                    let (start_bounds_x, start_bounds_y) = self.selection.start_drag_bounds_origin;
+                    let (dx, dy) = (x - start_x, y - start_y);
+                    self.selection.bounds.x = start_bounds_x + dx;
+                    self.selection.bounds.y = start_bounds_y + dy;
+                    self.selection.bounds.clamp_to_screen(self.size);
                 }
                 self.window_state.as_ref().unwrap().window.request_redraw();
 

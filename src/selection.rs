@@ -27,8 +27,10 @@ impl Bounds {
     }
 
     pub fn clamp_to_screen(&mut self, screen_size: (u32, u32)) -> () {
+        let was_neg_x = self.width < 0;
+        let was_neg_y = self.height < 0;
         let pos_self = self.to_positive_size();
-        let (mut x, mut y, width, height) = (pos_self.x, pos_self.y, pos_self.width, pos_self.height);
+        let (mut x, mut y, mut width, mut height) = (pos_self.x, pos_self.y, pos_self.width, pos_self.height);
         
         if x < 0 {
             x = 0;
@@ -41,6 +43,15 @@ impl Bounds {
         }
         if y + height > screen_size.1 as i32 {
             y = screen_size.1 as i32 - height;
+        }
+
+        if was_neg_x {
+            x += width;
+            width = -width;
+        }
+        if was_neg_y {
+            y += height;
+            height = -height;
         }
 
         self.x = x;
@@ -61,6 +72,8 @@ pub(crate) struct Selection {
 
     pub mouse_down: bool,
     pub shift_held: bool,
+    pub start_drag_location: (i32, i32),
+    pub start_drag_bounds_origin: (i32, i32),
     pub ctrl_held: bool,
 }
 
@@ -71,7 +84,11 @@ impl Selection {
         self.bounds.width = 0;
         self.bounds.height = 0;
         self.mouse_down = false;
+
         self.shift_held = false;
+        self.start_drag_location = (0, 0);
+        self.start_drag_bounds_origin = (0, 0);
+        
         self.ctrl_held = false;
     }
 }
