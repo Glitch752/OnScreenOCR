@@ -5,13 +5,15 @@ use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::Matrix};
 use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE };
 
 pub struct IconContext {
-    pub settings: SettingsManager
+    pub settings: SettingsManager,
+    pub settings_panel_visible: bool
 }
 
 impl IconContext {
     pub fn new() -> Self {
         Self {
-            settings: SettingsManager::new()
+            settings: SettingsManager::new(),
+            settings_panel_visible: false
         }
     }
 }
@@ -92,7 +94,7 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
 }
 
 macro_rules! horizontal_setting_layout {
-    ($text:expr, $icon:expr) => {
+    ($text:expr, $icon:block) => {
         {
             let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
             layout.add_text(IconText::new($text.to_string()));
@@ -115,11 +117,12 @@ impl IconRenderer {
             let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
             icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
-            iconcc
+            icon
         });
         menubar_layout.add_icon({
-            let mut icon = create_icon!("settings", IconBehavior::Click);
-            icon.click_callback = Some(Box::new(|_| { println!("Settings clicked!"); }));
+            let mut icon = create_icon!("settings", IconBehavior::SettingToggle);
+            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings_panel_visible }));
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings_panel_visible = !ctx.settings_panel_visible; }));
             icon
         });
         menubar_layout.add_icon({
@@ -129,12 +132,22 @@ impl IconRenderer {
         });
 
         let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 2., false);
-        settings_layout.add_layout(horizontal_setting_layout!("Test setting 1", create_icon!("settings", IconBehavior::Click)));
-        settings_layout.add_layout(horizontal_setting_layout!("Test setting 2", create_icon!("new-line", IconBehavior::Click)));
+        settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text", {
+            let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
+            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
+            icon
+        }));
+        settings_layout.add_layout(horizontal_setting_layout!("Reformat and correct text", {
+            let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
+            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
+            icon
+        }));
 
         let mut icon_layouts = IconLayouts::new();
         icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::Center, (0., 0.)), LayoutChild::Layout(settings_layout));
+        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 3. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
         icon_layouts.add_layout(
             String::from("copy"),
             ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
@@ -456,6 +469,8 @@ impl IconRenderer {
 
         self.update_icon_state_buffer(queue);
         self.update_icon_position_buffer(queue);
+
+        self.icons.set_visible("settings", icon_context.settings_panel_visible);
     }
 
     pub fn get_text_sections(&self) -> Vec<&glyph_brush::OwnedSection> {

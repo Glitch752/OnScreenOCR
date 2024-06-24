@@ -158,8 +158,6 @@ impl ApplicationHandler for App {
             let window = &self.window_state.as_ref().unwrap().window;
             window.set_visible(true);
             window.focus_window();
-
-            println!("Done initializing");
         } else {
             // Move the window to the monitor with the mouse
             let global_mouse_position = MouseCursor::pos();
