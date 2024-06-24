@@ -2,7 +2,7 @@ use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 use winit::event::ElementState;
 
 use crate::{selection::Bounds, wgpu_text::Matrix};
-use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, Layout, LayoutChild, IconText, ICON_MARGIN, ICON_SIZE };
+use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE };
 
 pub(crate) struct IconRenderer {
     pub icons: IconLayouts,
@@ -21,7 +21,9 @@ pub(crate) struct IconRenderer {
     pub instance_icon_position_buffer: wgpu::Buffer,
     pub instance_icon_state_buffer: wgpu::Buffer,
 
-    pub matrix_buffer: wgpu::Buffer
+    pub matrix_buffer: wgpu::Buffer,
+
+    pub current_screen_size: (f32, f32)
 }
 
 pub(crate) enum IconBehavior {
@@ -104,11 +106,11 @@ impl IconRenderer {
         settings_layout.add_layout(horizontal_setting_layout!("Test setting 2", create_icon!("new-line", IconBehavior::Click)));
 
         let mut icon_layouts = IconLayouts::new();
-        icon_layouts.add_layout(String::from("menubar"), (width / 2., ICON_SIZE / 2. + ICON_MARGIN), LayoutChild::Layout(menubar_layout));
-        icon_layouts.add_layout(String::from("settings"), (width / 2., height / 2.), LayoutChild::Layout(settings_layout));
+        icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
+        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::Center, (0., 0.)), LayoutChild::Layout(settings_layout));
         icon_layouts.add_layout(
             String::from("copy"),
-            (0., 0.), // Updated live
+            ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
             {
                 let mut icon = create_icon!("copy", IconBehavior::Click);
                 icon.bounds = Bounds {
@@ -150,7 +152,7 @@ impl IconRenderer {
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             lod_min_clamp: 0.0,
-            lod_max_clamp: 4.0,
+            lod_max_clamp: 1.0,
             compare: None,
             anisotropy_clamp: 1,
             border_color: None
@@ -359,7 +361,9 @@ impl IconRenderer {
             instance_icon_position_buffer,
             instance_icon_state_buffer,
 
-            matrix_buffer
+            matrix_buffer,
+
+            current_screen_size: (width, height)
         }
     }
 
@@ -414,7 +418,7 @@ impl IconRenderer {
     }
 
     pub fn update(&mut self, queue: &Queue, mouse_pos: (i32, i32)) {
-        self.icons.recalculate_positions();
+        self.icons.recalculate_positions(self.current_screen_size);
 
         self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos));
 
@@ -463,8 +467,9 @@ impl IconRenderer {
         queue.write_buffer(&self.instance_icon_state_buffer, 0, bytemuck::cast_slice(&instance_data));
     }
 
-    pub fn resize_view(&self, width: f32, height: f32, queue: &wgpu::Queue) {
+    pub fn resize_view(&mut self, width: f32, height: f32, queue: &wgpu::Queue) {
         self.update_matrix(crate::wgpu_text::ortho(width, height), queue);
+        self.current_screen_size = (width, height);
     }
 
     fn update_matrix(&self, matrix: crate::wgpu_text::Matrix, queue: &wgpu::Queue) {

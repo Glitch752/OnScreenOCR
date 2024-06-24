@@ -81,12 +81,13 @@ impl Renderer {
         pixels: &pixels::Pixels,
         width: u32,
         height: u32,
+        initial_background_data: &[u8]
     ) -> Result<Self, TextureError> {
         let device = pixels.device();
         let shader = wgpu::include_wgsl!("./shaders/background.wgsl");
         let module = device.create_shader_module(shader);
 
-        let texture = create_texture(pixels, width, height)?;
+        let texture = create_texture_with_data(pixels, width, height, initial_background_data)?;
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // Create a texture sampler with nearest neighbor
@@ -102,7 +103,7 @@ impl Renderer {
             lod_max_clamp: 1.0,
             compare: None,
             anisotropy_clamp: 1,
-            border_color: None,
+            border_color: None
         });
 
         // Create vertex buffer; array-of-array of position and texture coordinates
@@ -259,14 +260,14 @@ impl Renderer {
         Ok(())
     }
 
-    #[allow(dead_code)] // TODO: Remove this once it is used
     pub(crate) fn resize(
         &mut self,
         pixels: &pixels::Pixels,
         width: u32,
         height: u32,
+        new_background_data: &[u8]
     ) -> Result<(), TextureError> {
-        self.texture = create_texture(pixels, width, height)?;
+        self.texture = create_texture_with_data(pixels, width, height, new_background_data)?;
         self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
         
         self.background_bind_group = create_bind_group(
@@ -411,10 +412,11 @@ impl Renderer {
     }
 }
 
-fn create_texture(
+fn create_texture_with_data(
     pixels: &pixels::Pixels,
     width: u32,
     height: u32,
+    data: &[u8],
 ) -> Result<wgpu::Texture, TextureError> {
     let device = pixels.device();
     check_texture_size(device, width, height)?;
@@ -433,7 +435,7 @@ fn create_texture(
         view_formats: &[],
     };
 
-    Ok(device.create_texture(&texture_descriptor))
+    Ok(device.create_texture_with_data(pixels.queue(), &texture_descriptor, data))
 }
 
 fn create_bind_group(

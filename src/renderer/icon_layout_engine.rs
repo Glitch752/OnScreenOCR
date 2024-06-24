@@ -71,12 +71,12 @@ impl IconLayouts {
         }
     }
 
-    pub fn add_layout(&mut self, label: String, center_position: (f32, f32), layout: LayoutChild) {
+    pub fn add_layout(&mut self, label: String, center_position: ScreenRelativePosition, layout: LayoutChild) {
         self.layouts.insert(label, PositionedLayout::new(center_position, layout));
     }
 
     pub fn set_center(&mut self, label: &str, x: f32, y: f32) {
-        self.layouts.get_mut(label).unwrap().set_center(x, y);
+        self.layouts.get_mut(label).unwrap().set_offset(x, y);
     }
 
     pub fn set_visible(&mut self, label: &str, visible: bool) {
@@ -95,9 +95,9 @@ impl IconLayouts {
         self.layouts.iter().flat_map(|(_, sub_layout)| sub_layout.text_sections()).collect()
     }
 
-    pub fn recalculate_positions(&mut self) -> () {
+    pub fn recalculate_positions(&mut self, screen_size: (f32, f32)) -> () {
         for (_, sub_layout) in self.layouts.iter_mut() {
-            sub_layout.recalculate_positions();
+            sub_layout.recalculate_positions(screen_size);
         }
     }
 
@@ -109,16 +109,17 @@ impl IconLayouts {
 }
 
 pub(crate) struct PositionedLayout {
-    // TODO: Change to an object that allows screen-size-relative positioning
-    center_position: (f32, f32),
+    center_position: ScreenRelativePosition,
+    calculated_center_position: (f32, f32),
     last_center_position: Option<(f32, f32)>,
     layout: LayoutChild
 }
 
 impl PositionedLayout {
-    pub fn new(center_position: (f32, f32), layout: LayoutChild) -> Self {
+    pub fn new(center_position: ScreenRelativePosition, layout: LayoutChild) -> Self {
         PositionedLayout {
             center_position,
+            calculated_center_position: (0.0, 0.0),
             last_center_position: None,
             layout
         }
@@ -148,22 +149,23 @@ impl PositionedLayout {
         }
     }
 
-    pub fn recalculate_positions(&mut self) -> () {
-        if Some(self.center_position) == self.last_center_position {
+    pub fn recalculate_positions(&mut self, screen_size: (f32, f32)) -> () {
+        self.calculated_center_position = self.center_position.get_position(screen_size);
+        if Some(self.calculated_center_position) == self.last_center_position {
             return;
         }
-        self.last_center_position = Some(self.center_position);
+        self.last_center_position = Some(self.calculated_center_position);
 
         match &mut self.layout {
             LayoutChild::Icon(icon) => {
-                icon.bounds.set_center(self.center_position.0, self.center_position.1);
+                icon.bounds.set_center(self.calculated_center_position.0, self.calculated_center_position.1);
             }
             LayoutChild::Text(text) => {
-                text.bounds.set_center(self.center_position.0, self.center_position.1);
+                text.bounds.set_center(self.calculated_center_position.0, self.calculated_center_position.1);
                 text.update_section_position();
             }
             LayoutChild::Layout(layout) => {
-                layout.calculated_position = self.center_position;
+                layout.calculated_position = self.calculated_center_position;
                 layout.calculate_size();
                 layout.calculate_child_positions();
             }
@@ -177,8 +179,8 @@ impl PositionedLayout {
         }
     }
 
-    pub fn set_center(&mut self, x: f32, y: f32) {
-        self.center_position = (x, y);
+    pub fn set_offset(&mut self, x: f32, y: f32) {
+        self.center_position.offset = (x, y);
     }
 
     pub fn set_visible(&mut self, visible: bool) {
@@ -462,5 +464,53 @@ impl Layout {
         for background in self.background_children.iter_mut() {
             background.visible = visible;
         }
+    }
+}
+
+#[allow(unused)]
+pub(crate) enum ScreenLocation {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    CenterLeft,
+    Center,
+    CenterRight,
+    BottomLeft,
+    BottomCenter,
+    BottomRight
+}
+
+impl ScreenLocation {
+    pub fn get_on_screen_size(self: &ScreenLocation, screen_size: (f32, f32)) -> (f32, f32) {
+        match self {
+            ScreenLocation::TopLeft => (0.0, 0.0),
+            ScreenLocation::TopCenter => (screen_size.0 / 2., 0.0),
+            ScreenLocation::TopRight => (screen_size.0, 0.0),
+            ScreenLocation::CenterLeft => (0.0, screen_size.1 / 2.),
+            ScreenLocation::Center => (screen_size.0 / 2., screen_size.1 / 2.),
+            ScreenLocation::CenterRight => (screen_size.0, screen_size.1 / 2.),
+            ScreenLocation::BottomLeft => (0.0, screen_size.1),
+            ScreenLocation::BottomCenter => (screen_size.0 / 2., screen_size.1),
+            ScreenLocation::BottomRight => (screen_size.0, screen_size.1)
+        }
+    }
+}
+
+pub(crate) struct ScreenRelativePosition {
+    relative_to: ScreenLocation,
+    offset: (f32, f32)
+}
+
+impl ScreenRelativePosition {
+    pub fn new(relative_to: ScreenLocation, offset: (f32, f32)) -> Self {
+        ScreenRelativePosition {
+            relative_to,
+            offset
+        }
+    }
+
+    pub fn get_position(self: &ScreenRelativePosition, screen_size: (f32, f32)) -> (f32, f32) {
+        let (x, y) = self.relative_to.get_on_screen_size(screen_size);
+        (x + self.offset.0, y + self.offset.1)
     }
 }

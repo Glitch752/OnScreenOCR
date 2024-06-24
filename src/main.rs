@@ -56,6 +56,38 @@ struct App {
     relative_mouse_pos: (i32, i32),
 }
 
+impl App {
+    fn redraw(&mut self) {
+        let state = self.window_state.as_mut().unwrap();
+
+        let pixels = &state.pixels;
+        let shader_renderer = &mut state.shader_renderer;
+
+        self.ocr_handler.update_ocr_preview_text();
+
+        let render_result = pixels.render_with(|encoder, render_target, context| {
+            shader_renderer.update(
+                context,
+                self.size,
+                self.selection,
+                self.ocr_handler.ocr_preview_text.clone(),
+                self.relative_mouse_pos
+            );
+            shader_renderer.render(
+                encoder,
+                render_target,
+                context.scaling_renderer.clip_rect(),
+            );
+
+            Ok(())
+        });
+
+        if render_result.is_err() {
+            println!("Error rendering: {:?}", render_result);
+        }
+    }
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
@@ -63,7 +95,7 @@ impl ApplicationHandler for App {
         if self.window_state.is_none() {
             // Need to screenshot before the window is visible
             let screenshot = screenshot_primary();
-            self.ocr_handler.set_screenshot(screenshot.clone());
+            self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
 
             // Create the window
             let window = event_loop
@@ -74,7 +106,8 @@ impl ApplicationHandler for App {
                         .with_decorations(false)
                         .with_fullscreen(Some(Fullscreen::Borderless(None)))
                         .with_resizable(false)
-                        .with_window_level(WindowLevel::AlwaysOnTop),
+                        .with_window_level(WindowLevel::AlwaysOnTop)
+                        .with_visible(false),
                 )
                 .unwrap();
 
@@ -92,37 +125,42 @@ impl ApplicationHandler for App {
                 builder.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb);
             let pixels = builder.build().expect("Unable to create pixels");
 
-            let mut shader_renderer = renderer::Renderer::new(&pixels, width, height)
+            let shader_renderer = renderer::Renderer::new(&pixels, width, height, screenshot.bytes.as_slice())
                 .expect("Unable to create shader renderer");
-            let result = shader_renderer.write_screenshot_to_texture(&pixels, screenshot);
-            if result.is_err() {
-                println!("Error writing screenshot to texture: {:?}", result);
-            }
 
             self.window_state = Some(WindowState {
                 window,
                 pixels,
                 shader_renderer,
             });
+
+            self.redraw();
+            
+            let window = &self.window_state.as_ref().unwrap().window;
+            window.set_visible(true);
+            window.focus_window();
+
+            println!("Done initializing");
         } else {
             // Show the window
             let window_state = self.window_state.as_mut().unwrap();
-            let window = &window_state.window;
             let pixels = &window_state.pixels;
             let shader_renderer = &mut window_state.shader_renderer;
             
             let screenshot = screenshot_primary();
-            self.ocr_handler.set_screenshot(screenshot.clone());
+            self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
             let result = shader_renderer.write_screenshot_to_texture(pixels, screenshot);
             if result.is_err() {
                 println!("Error writing screenshot to texture: {:?}", result);
             }
 
             self.selection.reset();
+            self.redraw();
 
-            window.set_minimized(false);
+            let window_state = self.window_state.as_mut().unwrap();
+            let window = &window_state.window;
+            window.set_visible(true);
             window.focus_window();
-            window.request_redraw();
         }
     }
 
@@ -133,47 +171,18 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in AboutToWait, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
                 if self.window_state.is_none() {
                     return; // Shouldn't happen, but just in case
                 }
-
-                let state = self.window_state.as_mut().unwrap();
-                let window = &state.window;
-                if window.is_minimized().unwrap_or(true) {
+        
+                let window = &self.window_state.as_mut().unwrap().window;
+                if !window.is_visible().unwrap_or(false) {
                     return;
                 }
 
-                let pixels = &state.pixels;
-                let shader_renderer = &mut state.shader_renderer;
+                self.redraw();
 
-                self.ocr_handler.update_ocr_preview_text();
-
-                let render_result = pixels.render_with(|encoder, render_target, context| {
-                    shader_renderer.update(
-                        context,
-                        self.size,
-                        self.selection,
-                        self.ocr_handler.ocr_preview_text.clone(),
-                        self.relative_mouse_pos
-                    );
-                    shader_renderer.render(
-                        encoder,
-                        render_target,
-                        context.scaling_renderer.clip_rect(),
-                    );
-
-                    Ok(())
-                });
-
-                if render_result.is_err() {
-                    println!("Error rendering: {:?}", render_result);
-                }
-
+                let window = &self.window_state.as_mut().unwrap().window;
                 window.request_redraw();
             }
             #[allow(unused)]
@@ -197,7 +206,7 @@ impl ApplicationHandler for App {
 
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
-                        window.set_minimized(true);
+                        window.set_visible(false);
                     }
                     Key::Named(NamedKey::Shift) => {
                         self.selection.shift_held =
@@ -317,6 +326,36 @@ impl ApplicationHandler for App {
                 self.window_state.as_ref().unwrap().window.request_redraw();
 
                 self.ocr_handler.selection_changed(self.selection);
+            },
+            WindowEvent::Resized(new_size) => {
+                if self.window_state.is_none() {
+                    return; // Probably shouldn't happen; just in case
+                }
+
+                let window_state = self.window_state.as_mut().unwrap();
+
+                // If size is not equal to the size of the monitor the window is on, it's still initializing
+                let window = &window_state.window;
+                let monitor_size = window.current_monitor().unwrap().size();
+                if new_size.width != monitor_size.width || new_size.height != monitor_size.height {
+                    return;
+                }
+
+                // If the size is equal to our current size, don't do anything
+                if new_size.width == self.size.0 && new_size.height == self.size.1 {
+                    return;
+                }
+
+                println!("Resized to {:?}", new_size);
+
+                self.size = (new_size.width, new_size.height);
+                let pixels = &mut window_state.pixels;
+                let shader_renderer = &mut window_state.shader_renderer;
+
+                pixels.resize_surface(new_size.width, new_size.height).expect("Unable to resize pixels surface");
+                pixels.resize_buffer(new_size.width, new_size.height).expect("Unable to resize pixels buffer");
+                let screenshot = screenshot_primary();
+                shader_renderer.resize(pixels, new_size.width, new_size.height, screenshot.bytes.as_slice()).expect("Unable to resize shader renderer");
             }
             _ => (),
         }
