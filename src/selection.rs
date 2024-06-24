@@ -6,9 +6,45 @@ pub(crate) struct Bounds {
     pub height: i32
 }
 
+// Implement f32 -> i32 lossy conversion for Bounds
+pub trait BoundsNumber: Copy {
+    fn lossy_into(self) -> i32;
+}
+
+impl BoundsNumber for f32 {
+    fn lossy_into(self) -> i32 {
+        self as i32
+    }
+}
+
+impl BoundsNumber for i32 {
+    fn lossy_into(self) -> i32 {
+        self
+    }
+}
+
 impl Bounds {
-    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
-        Self { x, y, width, height }
+    // Not sure if there's a better way of doing this, but this works for now
+    pub fn new<X: BoundsNumber, Y: BoundsNumber, W: BoundsNumber, H: BoundsNumber>(x: X, y: Y, width: W, height: H) -> Self {
+        Self {
+            x: x.lossy_into(),
+            y: y.lossy_into(),
+            width: width.lossy_into(),
+            height: height.lossy_into()
+        }
+    }
+    
+    pub fn from_center<X: BoundsNumber, Y: BoundsNumber, W: BoundsNumber, H: BoundsNumber>(x: X, y: Y, width: W, height: H) -> Self {
+        let x = x.lossy_into();
+        let y = y.lossy_into();
+        let width = width.lossy_into();
+        let height = height.lossy_into();
+        Self {
+            x: x - width / 2,
+            y: y - height / 2,
+            width,
+            height
+        }
     }
 
     pub fn to_positive_size(&self) -> Bounds {

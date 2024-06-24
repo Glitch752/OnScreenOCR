@@ -3,10 +3,11 @@ use winit::event::ElementState;
 
 use crate::{selection::Bounds, wgpu_text::Matrix};
 
+const ICON_SIZE: f32 = 50.0;
+const ICON_MARGIN: f32 = 10.0;
+
 pub(crate) struct IconRenderer {
-    // TODO: turn into an array
-    pub format_single_line_icon: Icon,
-    pub copy_icon: Icon,
+    pub icons: Vec<Icon>,
 
     pub icon_atlas: Vec<u8>,
     pub icon_atlas_width: u32,
@@ -25,10 +26,10 @@ pub(crate) struct IconRenderer {
     pub matrix_buffer: wgpu::Buffer,
 }
 
-
 pub(crate) enum IconBehavior {
     Toggle,
     Click,
+    Visual
 }
 
 pub(crate) struct Icon {
@@ -66,7 +67,7 @@ macro_rules! create_icon {
         Icon {
             hovered: false,
             selected: false,
-            bounds: $bounds,
+            bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE, ICON_SIZE),
             behavior: $behavior,
             click_callback: None,
 
@@ -76,6 +77,24 @@ macro_rules! create_icon {
             icon_selected_hovered_pos: get_icon_pos(concat!($id, "-selected-hover.png"))
         }
     };
+}
+
+macro_rules! create_background {
+    ($bounds:expr) => {
+        Icon {
+            hovered: false,
+            selected: false,
+            bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE + ICON_MARGIN * 1.5, ICON_SIZE + ICON_MARGIN * 1.5),
+            behavior: IconBehavior::Visual,
+            click_callback: None,
+
+            icon_normal_pos: get_icon_pos("background.png"),
+            icon_hovered_pos: get_icon_pos("background.png"),
+            icon_selected_pos: get_icon_pos("background.png"),
+            icon_selected_hovered_pos: get_icon_pos("background.png")
+        }
+    };
+
 }
 
 fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32) -> wgpu::Texture {
@@ -99,11 +118,28 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
 
 impl IconRenderer {
     pub fn new(device: &Device, width: f32, height: f32) -> Self {
+        let icons = vec![
+            create_background!((width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+            create_background!((width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+            create_background!((width / 2., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+            create_icon!("new-line", IconBehavior::Toggle, (width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+            create_icon!("settings", IconBehavior::Click,  (width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+            {
+                let mut icon = create_icon!("copy", IconBehavior::Click, (0, 0)); // Set on-the-fly
+                icon.click_callback = Some(Box::new(|| {
+                    println!("Copy clicked!");
+                }));
+                icon
+            },
+        ];
+        let icon_count = icons.len();
+        let icon_variant_count = 13; // Needs to be manually defined for now; some icons have multiple variants and some are ued multiple times
+
         let icon_atlas = image!("../icons/atlas.png");
 
         // TODO: This could be stored at build time
         let icon_atlas_height = 512;
-        let icon_atlas_width = icon_atlas.len() as u32 / icon_atlas_height / 4;
+        let icon_atlas_width = icon_variant_count * 512;
 
         let icon_atlas_texture = create_texture(device, icon_atlas_width, icon_atlas_height);
         let icon_atlas_view = icon_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -117,7 +153,7 @@ impl IconRenderer {
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             lod_min_clamp: 0.0,
-            lod_max_clamp: 1.0,
+            lod_max_clamp: 4.0,
             compare: None,
             anisotropy_clamp: 1,
             border_color: None
@@ -130,8 +166,7 @@ impl IconRenderer {
         });
         let icon_atlas_icons_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Icon Atlas Icons Buffer"), // u32
-            // 2 icons; this should eventually be dynamic
-            contents: bytemuck::cast_slice(&[2u32]),
+            contents: bytemuck::cast_slice(&[icon_variant_count]),
             usage: wgpu::BufferUsages::UNIFORM
         });
 
@@ -156,13 +191,13 @@ impl IconRenderer {
         
         let instance_icon_position_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Icon Atlas Instance Position Buffer"),
-            size: 2 * 4 * std::mem::size_of::<f32>() as wgpu::BufferAddress, // 2 icons * 4 floats; this should eventually be dynamic
+            size: (icon_count * 4 * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false
         });
         let instance_icon_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Icon Atlas Instance State Buffer"),
-            size: 2 * std::mem::size_of::<f32>() as wgpu::BufferAddress, // 2 icons; this should eventually be dynamic
+            size: (icon_count * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false
         });
@@ -311,8 +346,7 @@ impl IconRenderer {
         });
 
         IconRenderer {
-            format_single_line_icon: create_icon!("new-line", IconBehavior::Toggle, Bounds::new(100, 100, 150, 150)),
-            copy_icon: create_icon!("copy", IconBehavior::Click, Bounds::new(500, 100, 150, 150)),
+            icons,
 
             icon_atlas,
             icon_atlas_width,
@@ -358,10 +392,10 @@ impl IconRenderer {
     }
 
     pub fn icons(&self) -> Vec<&Icon> {
-        vec![&self.format_single_line_icon, &self.copy_icon]
+        self.icons.iter().collect()
     }
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
-        vec![&mut self.format_single_line_icon, &mut self.copy_icon]
+        self.icons.iter_mut().collect()
     }
 
     pub fn render<'pass>(&'pass self, rpass: &mut wgpu::RenderPass<'pass>) {
@@ -382,9 +416,10 @@ impl IconRenderer {
     }
 
     pub fn update(&mut self, queue: &Queue, mouse_pos: (i32, i32)) {
-        self.icons_mut().into_iter().for_each(|icon| icon.update_hover(mouse_pos));
+        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos));
 
         self.update_icon_state_buffer(queue);
+        self.update_icon_position_buffer(queue);
     }
 
     fn update_icon_position_buffer(&mut self, queue: &Queue) {
@@ -433,11 +468,18 @@ impl Icon {
                         callback();
                     }
                 }
+                IconBehavior::Visual => {
+                    // Doesn't matter
+                }
             }
         }
     }
 
-    pub fn update_hover(&mut self, mouse_pos: (i32, i32)) {
+    pub fn update(&mut self, mouse_pos: (i32, i32)) {
+        // Update position
+        // TODO
+
+        // Update hover
         self.hovered = self.bounds.contains(mouse_pos);
         // If not hovered and a click button, unselect
         if !self.hovered && self.selected && matches!(self.behavior, IconBehavior::Click) {
