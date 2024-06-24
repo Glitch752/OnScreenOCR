@@ -3,6 +3,7 @@ use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
 };
 use glyph_brush::{Text, Section as TextSection};
+use winit::event::ElementState;
 use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush}};
 
 use crate::{screenshot::Screenshot, selection::Selection};
@@ -297,7 +298,7 @@ impl Renderer {
 
         let margin = 10;
 
-        let y = std::cmp::min(bounds.y, window_size.1 as i32 - ((text_lines - 1) * 24 + margin));
+        let y = std::cmp::min(bounds.y, window_size.1 as i32 - ((text_lines - 1) * 19 + margin));
 
         if left_side_space > right_side_space {
             Some((
@@ -314,25 +315,14 @@ impl Renderer {
         }
     }
 
-    pub(crate) fn click(&mut self, x: f32, y: f32) -> () {
-        self.icon_renderer.click((x as i32, y as i32));
-    }
-
-    pub(crate) fn update(
+    pub(crate) fn update_text(
         &mut self,
-        context: &PixelsContext,
-        window_size: (u32, u32),
-        selection: Selection,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         ocr_preview_text: Option<String>,
-        relative_mouse_pos: (i32, i32)
+        window_size: (u32, u32),
+        selection: Selection
     ) {
-        let device = &context.device;
-        let queue = &context.queue;
-
-        let locals = Locals::new(selection, window_size, true);
-
-        queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
-
         self.should_render_text = false;
         if ocr_preview_text.is_none() {
             return;
@@ -353,7 +343,27 @@ impl Renderer {
             .with_screen_position((placement.0, placement.1 - 18.0))
             .with_layout(glyph_brush::Layout::default().h_align(placement.2));
         self.text_brush.queue(device, queue, vec![&section]).unwrap();
+    }
 
+    pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) {
+        self.icon_renderer.mouse_event(mouse_pos, state);
+    }
+
+    pub(crate) fn update(
+        &mut self,
+        context: &PixelsContext,
+        window_size: (u32, u32),
+        selection: Selection,
+        ocr_preview_text: Option<String>,
+        relative_mouse_pos: (i32, i32)
+    ) {
+        let device = &context.device;
+        let queue = &context.queue;
+
+        let locals = Locals::new(selection, window_size, true);
+
+        queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
+        self.update_text(device, queue, ocr_preview_text, window_size, selection);
         self.icon_renderer.update(queue, relative_mouse_pos);
     }
 

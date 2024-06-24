@@ -256,19 +256,19 @@ impl ApplicationHandler for App {
                 button,
             } => match button {
                 winit::event::MouseButton::Left => {
+                    let (x, y) = MouseCursor::pos();
                     if state == winit::event::ElementState::Pressed {
-                        let (x, y) = MouseCursor::pos();
                         self.selection.bounds.x = x;
                         self.selection.bounds.y = y;
                         self.selection.bounds.width = 0;
                         self.selection.bounds.height = 0;
                         self.selection.mouse_down = true;
                         self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
-                        self.window_state.as_mut().unwrap().shader_renderer.click(x as f32, y as f32);
                     } else {
                         self.selection.mouse_down = false;
                     }
 
+                    self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state);
                     self.window_state.as_ref().unwrap().window.request_redraw();
                 }
                 _ => (),

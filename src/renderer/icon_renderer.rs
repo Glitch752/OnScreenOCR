@@ -1,4 +1,5 @@
 use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
+use winit::event::ElementState;
 
 use crate::{selection::Bounds, wgpu_text::Matrix};
 
@@ -55,8 +56,9 @@ macro_rules! image {
 
 static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
 
-fn get_icon_index(id: &str) -> u32 {
-    ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().last().unwrap().parse().unwrap()
+fn get_icon_pos(id: &str) -> u32 {
+    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().last().unwrap().parse().unwrap();
+    pos
 }
 
 macro_rules! create_icon {
@@ -68,10 +70,10 @@ macro_rules! create_icon {
             behavior: $behavior,
             click_callback: None,
 
-            icon_normal_pos: get_icon_index(concat!($id, "")),
-            icon_hovered_pos: get_icon_index(concat!($id, "-hover")),
-            icon_selected_pos: get_icon_index(concat!($id, "-selected")),
-            icon_selected_hovered_pos: get_icon_index(concat!($id, "-selected-hover"))
+            icon_normal_pos: get_icon_pos(concat!($id, ".png")),
+            icon_hovered_pos: get_icon_pos(concat!($id, "-hover.png")),
+            icon_selected_pos: get_icon_pos(concat!($id, "-selected.png")),
+            icon_selected_hovered_pos: get_icon_pos(concat!($id, "-selected-hover.png"))
         }
     };
 }
@@ -371,12 +373,12 @@ impl IconRenderer {
         rpass.draw_indexed(0..6, 0, 0..self.icons().len() as u32);
     }
 
-    pub fn click(&mut self, mouse_pos: (i32, i32)) {
-        self.icons_mut().iter_mut().for_each(|icon| icon.click(mouse_pos));
+    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) {
+        self.icons_mut().iter_mut().for_each(|icon| icon.mouse_event(mouse_pos, state));
     }
 
     pub fn update(&mut self, queue: &Queue, mouse_pos: (i32, i32)) {
-        self.icons_mut().into_iter().for_each(|icon| icon.hovered = icon.bounds.contains(mouse_pos));
+        self.icons_mut().into_iter().for_each(|icon| icon.update_hover(mouse_pos));
 
         self.update_icon_state_buffer(queue);
     }
@@ -413,18 +415,29 @@ impl IconRenderer {
 }
 
 impl Icon {
-    pub fn click(&mut self, mouse_pos: (i32, i32)) {
+    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) {
         if self.bounds.contains(mouse_pos) {
             match self.behavior {
                 IconBehavior::Toggle => {
-                    self.selected = !self.selected;
+                    if state == ElementState::Pressed {
+                        self.selected = !self.selected;
+                    }
                 }
                 IconBehavior::Click => {
+                    self.selected = state == ElementState::Pressed;
                     if let Some(callback) = &self.click_callback {
                         callback();
                     }
                 }
             }
+        }
+    }
+
+    pub fn update_hover(&mut self, mouse_pos: (i32, i32)) {
+        self.hovered = self.bounds.contains(mouse_pos);
+        // If not hovered and a click button, unselect
+        if !self.hovered && self.selected && matches!(self.behavior, IconBehavior::Click) {
+            self.selected = false;
         }
     }
 }
