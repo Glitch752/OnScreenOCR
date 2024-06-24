@@ -23,10 +23,13 @@ macro_rules! create_icon {
             use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE };
             Icon {
                 hovered: false,
-                selected: false,
+                pressed: false,
+                active: false,
+
                 bounds: Bounds::new(0, 0, ICON_SIZE, ICON_SIZE),
                 behavior: $behavior,
                 click_callback: None,
+                get_active: None,
                 visible: true,
 
                 icon_normal_pos: get_icon_atlas_pos(concat!($id, ".png")),
@@ -45,10 +48,13 @@ macro_rules! create_background {
             use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE, ICON_MARGIN };
             Icon {
                 hovered: false,
-                selected: false,
+                pressed: false,
+                active: false,
+
                 bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE + ICON_MARGIN, ICON_SIZE + ICON_MARGIN),
                 behavior: IconBehavior::Visual,
                 click_callback: None,
+                get_active: None,
                 visible: true,
 
                 icon_normal_pos: get_icon_atlas_pos("background.png"),

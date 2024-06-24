@@ -14,6 +14,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Test and add support for MacOS and Linux
 - [ ] Tooltips when hovering over buttons
 - [ ] Feedback for copying to clipboard
+- [ ] Add persistent settings
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

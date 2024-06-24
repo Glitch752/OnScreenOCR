@@ -1,3 +1,4 @@
+pub use icon_renderer::IconContext;
 use icon_renderer::IconRenderer;
 use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
@@ -345,8 +346,8 @@ impl Renderer {
             .with_layout(glyph_brush::Layout::default().h_align(placement.2)));
     }
 
-    pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
-        self.icon_renderer.mouse_event(mouse_pos, state)
+    pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
+        self.icon_renderer.mouse_event(mouse_pos, state, icon_context)
     }
 
     pub(crate) fn update(
@@ -355,7 +356,8 @@ impl Renderer {
         window_size: (u32, u32),
         selection: Selection,
         ocr_preview_text: Option<String>,
-        relative_mouse_pos: (i32, i32)
+        relative_mouse_pos: (i32, i32),
+        icon_context: &IconContext
     ) {
         let device = &context.device;
         let queue = &context.queue;
@@ -372,7 +374,7 @@ impl Renderer {
         self.should_render_text = sections.len() > 0;
         self.text_brush.queue(device, queue, sections).unwrap();
 
-        self.icon_renderer.update(queue, relative_mouse_pos);
+        self.icon_renderer.update(queue, relative_mouse_pos, icon_context);
     }
 
     fn render_background<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>, clip_rect: (u32, u32, u32, u32)) {

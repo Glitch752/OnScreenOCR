@@ -11,7 +11,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Fullscreen, Window, WindowId, WindowLevel};
-use settings::SettingsManager;
+use renderer::IconContext;
 
 mod ocr_handler;
 mod renderer;
@@ -56,11 +56,16 @@ struct App {
     selection: Selection,
     ocr_handler: OCRHandler,
     relative_mouse_pos: (i32, i32),
-    settings_manager: SettingsManager,
+
+    icon_context: Option<IconContext>
 }
 
 impl App {
     fn redraw(&mut self) {
+        if self.icon_context.is_none() {
+            self.icon_context = Some(IconContext::new());
+        }
+
         let state = self.window_state.as_mut().unwrap();
 
         let pixels = &state.pixels;
@@ -74,7 +79,8 @@ impl App {
                 self.size,
                 self.selection,
                 self.ocr_handler.ocr_preview_text.clone(),
-                self.relative_mouse_pos
+                self.relative_mouse_pos,
+                self.icon_context.as_ref().unwrap()
             );
             shader_renderer.render(
                 encoder,
@@ -258,7 +264,9 @@ impl ApplicationHandler for App {
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
                         window.set_visible(false);
-                        self.settings_manager.save();
+                        if let Some(icon_context) = self.icon_context.as_ref() {
+                            icon_context.settings.save();
+                        }
                     }
                     Key::Named(NamedKey::Shift) => {
                         self.selection.shift_held =
@@ -331,7 +339,10 @@ impl ApplicationHandler for App {
                         (pos.0 - window_pos.x, pos.1 - window_pos.y)
                     };
 
-                    let was_handled = self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state);
+                    if self.icon_context.is_none() {
+                        self.icon_context = Some(IconContext::new());
+                    }
+                    let was_handled = self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state, self.icon_context.as_mut().unwrap());
 
                     if !was_handled {
                         if state == winit::event::ElementState::Pressed {

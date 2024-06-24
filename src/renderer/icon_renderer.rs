@@ -1,8 +1,44 @@
 use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 use winit::event::ElementState;
 
-use crate::{selection::Bounds, wgpu_text::Matrix};
+use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::Matrix};
 use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE };
+
+pub struct IconContext {
+    pub settings: SettingsManager
+}
+
+impl IconContext {
+    pub fn new() -> Self {
+        Self {
+            settings: SettingsManager::new()
+        }
+    }
+}
+
+#[derive(PartialEq)]
+pub(crate) enum IconBehavior {
+    SettingToggle,
+    Click,
+    Visual
+}
+
+pub(crate) struct Icon {
+    pub hovered: bool,
+    pub pressed: bool,
+    pub active: bool,
+
+    pub bounds: Bounds,
+    pub visible: bool,
+    pub behavior: IconBehavior,
+    pub click_callback: Option<Box<dyn Fn(&mut IconContext) -> ()>>,
+    pub get_active: Option<Box<dyn Fn(&IconContext) -> bool>>,
+
+    pub(crate) icon_normal_pos: (u32, u32),
+    pub(crate) icon_hovered_pos: (u32, u32),
+    pub(crate) icon_selected_pos: (u32, u32),
+    pub(crate) icon_selected_hovered_pos: (u32, u32)
+}
 
 pub(crate) struct IconRenderer {
     pub icons: IconLayouts,
@@ -24,26 +60,6 @@ pub(crate) struct IconRenderer {
     pub matrix_buffer: wgpu::Buffer,
 
     pub current_screen_size: (f32, f32)
-}
-
-pub(crate) enum IconBehavior {
-    Toggle,
-    Click,
-    Visual
-}
-
-pub(crate) struct Icon {
-    pub hovered: bool,
-    pub selected: bool,
-    pub bounds: Bounds,
-    pub visible: bool,
-    pub behavior: IconBehavior,
-    pub click_callback: Option<Box<dyn Fn() -> ()>>,
-
-    pub(crate) icon_normal_pos: (u32, u32),
-    pub(crate) icon_hovered_pos: (u32, u32),
-    pub(crate) icon_selected_pos: (u32, u32),
-    pub(crate) icon_selected_hovered_pos: (u32, u32),
 }
 
 macro_rules! image {
@@ -89,14 +105,26 @@ macro_rules! horizontal_setting_layout {
 impl IconRenderer {
     pub fn new(device: &Device, width: f32, height: f32) -> Self {
         let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-        menubar_layout.add_icon(create_icon!("new-line", IconBehavior::Toggle));
-        menubar_layout.add_icon(create_icon!("fix-text", IconBehavior::Toggle));
-        menubar_layout.add_icon(create_icon!("settings", IconBehavior::Click));
+        menubar_layout.add_icon({
+            let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
+            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
+            icon
+        });
+        menubar_layout.add_icon({
+            let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
+            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
+            iconcc
+        });
+        menubar_layout.add_icon({
+            let mut icon = create_icon!("settings", IconBehavior::Click);
+            icon.click_callback = Some(Box::new(|_| { println!("Settings clicked!"); }));
+            icon
+        });
         menubar_layout.add_icon({
             let mut icon = create_icon!("copy", IconBehavior::Click);
-            icon.click_callback = Some(Box::new(|| {
-                println!("Copy clicked!");
-            }));
+            icon.click_callback = Some(Box::new(|_| { println!("Copy clicked!"); }));
             icon
         });
 
@@ -118,7 +146,7 @@ impl IconRenderer {
                     width: 25,
                     height: 25
                 };
-                icon.click_callback = Some(Box::new(|| {
+                icon.click_callback = Some(Box::new(|_| {
                     println!("Copy clicked!");
                 }));
                 LayoutChild::Icon(icon)
@@ -412,14 +440,19 @@ impl IconRenderer {
         rpass.draw_indexed(0..6, 0, 0..self.icons().len() as u32);
     }
 
-    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
-        self.icons_mut().iter_mut().any(|icon| icon.mouse_event(mouse_pos, state))
+    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
+        self.icons_mut().iter_mut().any(|icon| icon.mouse_event(mouse_pos, state, icon_context))
     }
 
-    pub fn update(&mut self, queue: &Queue, mouse_pos: (i32, i32)) {
+    pub fn update(
+        &mut self,
+        queue: &Queue,
+        mouse_pos: (i32, i32),
+        icon_context: &IconContext
+    ) {
         self.icons.recalculate_positions(self.current_screen_size);
 
-        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos));
+        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, icon_context));
 
         self.update_icon_state_buffer(queue);
         self.update_icon_position_buffer(queue);
@@ -451,7 +484,7 @@ impl IconRenderer {
 
     fn update_icon_state_buffer(&mut self, queue: &Queue) {
         let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
-            let active_icon_pos = match (icon.selected, icon.hovered) {
+            let active_icon_pos = match (icon.active, icon.hovered) {
                 (true, true) => icon.icon_selected_hovered_pos,
                 (true, false) => icon.icon_selected_pos,
                 (false, true) => icon.icon_hovered_pos,
@@ -477,19 +510,17 @@ impl IconRenderer {
 }
 
 impl Icon {
-    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState) -> bool {
+    pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
         if self.bounds.contains(mouse_pos) {
             match self.behavior {
-                IconBehavior::Toggle => {
-                    if state == ElementState::Pressed {
-                        self.selected = !self.selected;
-                    }
-                    true
-                }
-                IconBehavior::Click => {
-                    self.selected = state == ElementState::Pressed;
+                IconBehavior::Click | IconBehavior::SettingToggle => {
                     if let Some(callback) = &self.click_callback {
-                        callback();
+                        if state == ElementState::Pressed {
+                            callback(icon_context);
+                        }
+                    }
+                    if self.behavior == IconBehavior::Click {
+                        self.pressed = state == ElementState::Pressed;
                     }
                     true
                 }
@@ -503,12 +534,14 @@ impl Icon {
         }
     }
 
-    pub fn update(&mut self, mouse_pos: (i32, i32)) {
+    pub fn update(&mut self, mouse_pos: (i32, i32), icon_context: &IconContext) {
         // Update hover
         self.hovered = self.bounds.contains(mouse_pos);
+        self.active = self.get_active.as_ref().map_or(false, |get_active| get_active(icon_context)) || self.pressed;
+
         // If not hovered and a click button, unselect
-        if !self.hovered && self.selected && matches!(self.behavior, IconBehavior::Click) {
-            self.selected = false;
+        if !self.hovered && self.pressed && matches!(self.behavior, IconBehavior::Click) {
+            self.pressed = false;
         }
     }
 }
