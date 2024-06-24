@@ -225,7 +225,7 @@ pub(crate) struct IconText {
 impl IconText {
     pub fn new(string: String) -> Self {
         // Approximate text size
-        let bounds = Bounds::new(0, 0, string.len() as f32 * TEXT_HEIGHT / 2., TEXT_HEIGHT as i32);
+        let bounds = Bounds::new(0, 0, string.len() as f32 * TEXT_HEIGHT * 0.5 + ICON_MARGIN, TEXT_HEIGHT as i32);
         IconText {
             bounds,
             text_section: OwnedSection {
@@ -239,7 +239,7 @@ impl IconText {
     }
 
     pub fn update_section_position(&mut self) {
-        self.text_section.screen_position = (self.bounds.x as f32, self.bounds.y as f32);
+        self.text_section.screen_position = (self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32);
     }
 }
 
@@ -269,8 +269,8 @@ impl Layout {
             Direction::Horizontal => self.calculated_size.0,
             Direction::Vertical => self.calculated_size.1
         };
-        // There is 1 background child for every (ICON_SIZE * 0.9) length and 1 for every space between icons
-        let background_icons_required = if self.has_background { (primary_dimension / (ICON_SIZE * 0.9)).floor() as u32 } else { 0 };
+        // There is 1 background child for every (ICON_SIZE * 0.9) length
+        let background_icons_required = if self.has_background { (primary_dimension / (ICON_SIZE * 0.9) + 0.2).floor() as u32 } else { 0 };
         for _ in 0..background_icons_required {
             self.background_children.push(create_background!((0, 0)));
         }
@@ -404,7 +404,7 @@ impl Layout {
                     }
                 }
                 LayoutChild::Layout(layout) => {
-                    layout.calculated_position = top_left_position;
+                    layout.calculated_position = (top_left_position.0 + layout.calculated_size.0 / 2., top_left_position.1 + layout.calculated_size.1 / 2.);
                     layout.calculate_child_positions();
                     match self.direction {
                         Direction::Horizontal => {
