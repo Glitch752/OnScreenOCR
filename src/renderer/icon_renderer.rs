@@ -6,8 +6,304 @@ use crate::{selection::Bounds, wgpu_text::Matrix};
 const ICON_SIZE: f32 = 50.0;
 const ICON_MARGIN: f32 = 10.0;
 
+static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
+
+fn get_icon_pos(id: &str) -> u32 {
+    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().last().unwrap().parse().unwrap();
+    pos
+}
+
+macro_rules! create_icon {
+    ($id:literal, $behavior:expr, $bounds:expr) => {
+        Icon {
+            hovered: false,
+            selected: false,
+            bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE, ICON_SIZE),
+            behavior: $behavior,
+            click_callback: None,
+
+            icon_normal_pos: get_icon_pos(concat!($id, ".png")),
+            icon_hovered_pos: get_icon_pos(concat!($id, "-hover.png")),
+            icon_selected_pos: get_icon_pos(concat!($id, "-selected.png")),
+            icon_selected_hovered_pos: get_icon_pos(concat!($id, "-selected-hover.png"))
+        }
+    };
+}
+
+macro_rules! create_background {
+    ($bounds:expr) => {
+        Icon {
+            hovered: false,
+            selected: false,
+            bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE + ICON_MARGIN * 1.5, ICON_SIZE + ICON_MARGIN * 1.5),
+            behavior: IconBehavior::Visual,
+            click_callback: None,
+
+            icon_normal_pos: get_icon_pos("background.png"),
+            icon_hovered_pos: get_icon_pos("background.png"),
+            icon_selected_pos: get_icon_pos("background.png"),
+            icon_selected_hovered_pos: get_icon_pos("background.png")
+        }
+    };
+
+}
+
+pub(crate) struct IconLayouts {
+    layouts: Vec<PositionedLayout>
+}
+
+impl IconLayouts {
+    pub fn new() -> Self {
+        IconLayouts {
+            layouts: Vec::new()
+        }
+    }
+
+    pub fn add_layout(&mut self, center_position: (f32, f32), layout: LayoutChild) {
+        self.layouts.push(PositionedLayout::new(center_position, layout));
+    }
+
+    pub fn icons(&self) -> Vec<&Icon> {
+        self.layouts.iter().flat_map(|sub_layout| sub_layout.icons()).collect()
+    }
+
+    pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
+        self.layouts.iter_mut().flat_map(|sub_layout| sub_layout.icons_mut()).collect()
+    }
+
+    pub fn recalculate_positions(&mut self) -> () {
+        for sub_layout in self.layouts.iter_mut() {
+            sub_layout.recalculate_positions();
+        }
+    }
+}
+
+pub(crate) struct PositionedLayout {
+    // TODO: Change to an object that allows screen-size-relative positioning
+    center_position: (f32, f32),
+    last_center_position: Option<(f32, f32)>,
+    layout: LayoutChild
+}
+
+impl PositionedLayout {
+    pub fn new(center_position: (f32, f32), layout: LayoutChild) -> Self {
+        PositionedLayout {
+            center_position,
+            last_center_position: None,
+            layout
+        }
+    }
+
+    pub fn icons(&self) -> Vec<&Icon> {
+        match &self.layout {
+            LayoutChild::Icon(icon) => vec!(icon),
+            LayoutChild::Layout(layout) => layout.icons()
+        }
+    }
+
+    pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
+        match &mut self.layout {
+            LayoutChild::Icon(icon) => vec!(icon),
+            LayoutChild::Layout(layout) => layout.icons_mut()
+        }
+    }
+
+    pub fn recalculate_positions(&mut self) -> () {
+        if Some(self.center_position) == self.last_center_position {
+            return;
+        }
+        self.last_center_position = Some(self.center_position);
+
+        match &mut self.layout {
+            LayoutChild::Icon(icon) => {
+                icon.bounds.set_center(self.center_position.0, self.center_position.1);
+            }
+            LayoutChild::Layout(layout) => {
+                layout.calculated_position = self.center_position;
+                layout.calculate_size();
+                layout.calculate_child_positions();
+            }
+        }
+    }
+}
+
+#[allow(unused)]
+pub(crate) enum Direction {
+    Horizontal,
+    Vertical
+}
+
+#[allow(unused)]
+pub(crate) enum CrossJustify {
+    Start,
+    Center,
+    End
+}
+
+pub(crate) struct Layout {
+    children: Vec<LayoutChild>,
+    direction: Direction,
+    cross_justify: CrossJustify,
+    spacing: f32,
+
+    has_background: bool,
+    background_children: Vec<Icon>,
+
+    calculated_position: (f32, f32),
+    calculated_size: (f32, f32)
+}
+
+pub(crate) enum LayoutChild {
+    Icon(Icon),
+    Layout(Layout)
+}
+
+impl Layout {
+    pub fn new(direction: Direction, cross_justify: CrossJustify, spacing: f32, has_background: bool) -> Self {
+        Layout {
+            children: Vec::new(),
+            direction,
+            cross_justify,
+            spacing,
+            has_background,
+            background_children: Vec::new(),
+            calculated_position: (0.0, 0.0),
+            calculated_size: (0.0, 0.0)
+        }
+    }
+
+    pub fn add_icon(&mut self, icon: Icon) {
+        self.children.push(LayoutChild::Icon(icon));
+    }
+
+    pub fn icons(&self) -> Vec<&Icon> {
+        self.children.iter().flat_map(|child| match child {
+            LayoutChild::Icon(icon) => vec!(icon),
+            LayoutChild::Layout(layout) => layout.icons()
+        }).collect()
+    }
+
+    pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
+        self.children.iter_mut().flat_map(|child| match child {
+            LayoutChild::Icon(icon) => vec!(icon),
+            LayoutChild::Layout(layout) => layout.icons_mut()
+        }).collect()
+    }
+
+    pub fn calculate_size(&mut self) -> (f32, f32) {
+        let mut width = 0.0;
+        let mut height = 0.0;
+        for child in self.children.iter_mut() {
+            match child {
+                LayoutChild::Icon(icon) => {
+                    width += icon.bounds.width as f32;
+                    height += icon.bounds.height as f32;
+                }
+                LayoutChild::Layout(layout) => {
+                    let (child_width, child_height) = layout.calculate_size();
+                    match self.direction {
+                        Direction::Horizontal => {
+                            width += child_width;
+                            height = height.max(child_height);
+                        }
+                        Direction::Vertical => {
+                            width = width.max(child_width);
+                            height += child_height;
+                        }
+                    }
+                }
+            }
+        }
+        self.calculated_size = (width, height);
+        (width, height)
+    }
+
+    pub fn calculate_child_positions(&mut self) -> () {
+        let mut top_left_position = (self.calculated_position.0 - self.calculated_size.0 / 2., self.calculated_position.1 - self.calculated_size.1 / 2.);
+        for child in self.children.iter_mut() {
+            match child {
+                LayoutChild::Icon(icon) => {
+                    match self.direction {
+                        Direction::Horizontal => {
+                            match self.cross_justify {
+                                CrossJustify::Start => {
+                                    icon.bounds.set_origin(top_left_position.0, top_left_position.1);
+                                }
+                                CrossJustify::Center => {
+                                    icon.bounds.set_center(top_left_position.0 + icon.bounds.width as f32 / 2., top_left_position.1 + icon.bounds.height as f32 / 2.);
+                                }
+                                CrossJustify::End => {
+                                    icon.bounds.set_origin(top_left_position.0, top_left_position.1 + self.calculated_size.1 - icon.bounds.height as f32);
+                                }
+                            }
+                            top_left_position.0 += icon.bounds.width as f32 + self.spacing;
+                        }
+                        Direction::Vertical => {
+                            match self.cross_justify {
+                                CrossJustify::Start => {
+                                    icon.bounds.set_origin(top_left_position.0, top_left_position.1);
+                                }
+                                CrossJustify::Center => {
+                                    icon.bounds.set_center(top_left_position.0 + icon.bounds.width as f32 / 2., top_left_position.1 + icon.bounds.height as f32 / 2.);
+                                }
+                                CrossJustify::End => {
+                                    icon.bounds.set_origin(top_left_position.0 + self.calculated_size.0 - icon.bounds.width as f32, top_left_position.1);
+                                }
+                            }
+                            top_left_position.1 += icon.bounds.height as f32 + self.spacing;
+                        }
+                    }
+                }
+                LayoutChild::Layout(layout) => {
+                    layout.calculated_position = top_left_position;
+                    layout.calculate_child_positions();
+                    top_left_position.0 += layout.calculated_size.0 + self.spacing;
+                }
+            }
+        }
+        
+        if !self.has_background {
+            return;
+        }
+
+        // There is 1 background child for every icon and 1 for every space between icons
+        let icon_children = self.children.iter().filter(|child| matches!(child, LayoutChild::Icon(_))).map(|child| match child {
+            LayoutChild::Icon(icon) => icon,
+            _ => unreachable!()
+        });
+        let background_icons_required = icon_children.clone().count() * 2 - 1;
+        if self.background_children.len() != background_icons_required {
+            if self.background_children.len() < background_icons_required {
+                let mut new_background_children = Vec::new();
+                for _ in 0..background_icons_required - self.background_children.len() {
+                    new_background_children.push(create_background!((0, 0)));
+                }
+                self.background_children.append(&mut new_background_children);
+            } else {
+                self.background_children.truncate(background_icons_required);
+            }
+        }
+
+        let mut last_position: Option<(i32, i32)> = None;
+        let mut background_icon_index = 0;
+        for icon in icon_children {
+            let icon_position = icon.bounds.get_center();
+            if let Some(last_position) = last_position {
+                let background = self.background_children.get_mut(background_icon_index).unwrap();
+                background.bounds.set_center((icon_position.0 + last_position.0) as f32 / 2., (icon_position.1 + last_position.1) as f32 / 2.);
+                background_icon_index += 1;
+            }
+            last_position = Some(icon_position);
+
+            let background = self.background_children.get_mut(background_icon_index).unwrap();
+            background.bounds.set_center(icon_position.0 as f32, icon_position.1 as f32);
+            background_icon_index += 1;
+        }
+    }
+}
+
 pub(crate) struct IconRenderer {
-    pub icons: Vec<Icon>,
+    pub icons: IconLayouts,
 
     pub icon_atlas: Vec<u8>,
     pub icon_atlas_width: u32,
@@ -55,48 +351,6 @@ macro_rules! image {
     };
 }
 
-static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
-
-fn get_icon_pos(id: &str) -> u32 {
-    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().last().unwrap().parse().unwrap();
-    pos
-}
-
-macro_rules! create_icon {
-    ($id:literal, $behavior:expr, $bounds:expr) => {
-        Icon {
-            hovered: false,
-            selected: false,
-            bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE, ICON_SIZE),
-            behavior: $behavior,
-            click_callback: None,
-
-            icon_normal_pos: get_icon_pos(concat!($id, ".png")),
-            icon_hovered_pos: get_icon_pos(concat!($id, "-hover.png")),
-            icon_selected_pos: get_icon_pos(concat!($id, "-selected.png")),
-            icon_selected_hovered_pos: get_icon_pos(concat!($id, "-selected-hover.png"))
-        }
-    };
-}
-
-macro_rules! create_background {
-    ($bounds:expr) => {
-        Icon {
-            hovered: false,
-            selected: false,
-            bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE + ICON_MARGIN * 1.5, ICON_SIZE + ICON_MARGIN * 1.5),
-            behavior: IconBehavior::Visual,
-            click_callback: None,
-
-            icon_normal_pos: get_icon_pos("background.png"),
-            icon_hovered_pos: get_icon_pos("background.png"),
-            icon_selected_pos: get_icon_pos("background.png"),
-            icon_selected_hovered_pos: get_icon_pos("background.png")
-        }
-    };
-
-}
-
 fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32) -> wgpu::Texture {
     let icon_atlas_size = wgpu::Extent3d {
         width: icon_atlas_width,
@@ -118,21 +372,35 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
 
 impl IconRenderer {
     pub fn new(device: &Device, width: f32, height: f32) -> Self {
-        let icons = vec![
-            create_background!((width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-            create_background!((width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-            create_background!((width / 2., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-            create_icon!("new-line", IconBehavior::Toggle, (width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-            create_icon!("settings", IconBehavior::Click,  (width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-            {
-                let mut icon = create_icon!("copy", IconBehavior::Click, (0, 0)); // Set on-the-fly
-                icon.click_callback = Some(Box::new(|| {
-                    println!("Copy clicked!");
-                }));
-                icon
-            },
-        ];
-        let icon_count = icons.len();
+        // let icons = vec![
+        //     create_background!((width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+        //     create_background!((width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+        //     create_background!((width / 2., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+        //     create_icon!("new-line", IconBehavior::Toggle, (width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+        //     create_icon!("settings", IconBehavior::Click,  (width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
+        //     {
+        //         let mut icon = create_icon!("copy", IconBehavior::Click, (0, 0)); // Set on-the-fly
+        //         icon.click_callback = Some(Box::new(|| {
+        //             println!("Copy clicked!");
+        //         }));
+        //         icon
+        //     },
+        // ];
+        let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
+        menubar_layout.add_icon(create_icon!("new-line", IconBehavior::Toggle, (0, 0)));
+        menubar_layout.add_icon(create_icon!("settings", IconBehavior::Click, (0, 0)));
+        menubar_layout.add_icon({
+            let mut icon = create_icon!("copy", IconBehavior::Click, (0, 0));
+            icon.click_callback = Some(Box::new(|| {
+                println!("Copy clicked!");
+            }));
+            icon
+        });
+
+        let mut icon_layouts = IconLayouts::new();
+        icon_layouts.add_layout((width / 2., 100.), LayoutChild::Layout(menubar_layout));
+
+        let icon_count = icon_layouts.icons().len();
         let icon_variant_count = 13; // Needs to be manually defined for now; some icons have multiple variants and some are ued multiple times
 
         let icon_atlas = image!("../icons/atlas.png");
@@ -346,7 +614,7 @@ impl IconRenderer {
         });
 
         IconRenderer {
-            icons,
+            icons: icon_layouts,
 
             icon_atlas,
             icon_atlas_width,
@@ -392,10 +660,10 @@ impl IconRenderer {
     }
 
     pub fn icons(&self) -> Vec<&Icon> {
-        self.icons.iter().collect()
+        self.icons.icons()
     }
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
-        self.icons.iter_mut().collect()
+        self.icons.icons_mut()
     }
 
     pub fn render<'pass>(&'pass self, rpass: &mut wgpu::RenderPass<'pass>) {
@@ -416,6 +684,8 @@ impl IconRenderer {
     }
 
     pub fn update(&mut self, queue: &Queue, mouse_pos: (i32, i32)) {
+        self.icons.recalculate_positions();
+
         self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos));
 
         self.update_icon_state_buffer(queue);
