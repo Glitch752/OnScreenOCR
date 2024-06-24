@@ -1,3 +1,5 @@
+use winit::monitor::MonitorHandle;
+
 extern crate libc;
 
 #[derive(Debug, Clone)]
@@ -7,9 +9,8 @@ pub(crate) struct Screenshot {
     pub bytes: Vec<u8>,
 }
 
-pub(crate) fn screenshot_primary() -> Screenshot {
-    // TODO: Use the display with the mouse
-    let ss = crate::screenshot::ffi::get_screenshot(0).unwrap();
+pub(crate) fn screenshot_from_handle(monitor: MonitorHandle) -> Screenshot {
+    let ss = crate::screenshot::ffi::get_screenshot_from_matching(monitor.position().into(), monitor.size().into()).unwrap();
     let ss_bytes = ss.as_ref().to_vec();
 
     Screenshot {
@@ -48,11 +49,16 @@ impl AsRef<[u8]> for ScreenshotData {
 
 type ScreenResult = Result<ScreenshotData, &'static str>;
 
+// This should definitely be converted to all use windows_sys... but it works.
 #[cfg(target_os = "windows")]
 mod ffi {
 	#![allow(non_snake_case, dead_code)]
+	use bytemuck::Contiguous;
+use windows_sys::Win32::Graphics::Gdi as W32Gdi;
 
-	use libc::{c_int, c_uint, c_long, c_void};
+	use std::collections::VecDeque;
+
+use libc::{c_int, c_uint, c_long, c_void};
 
 	type PVOID = *mut c_void;
 	type LPVOID = *mut c_void;
@@ -173,42 +179,65 @@ mod ffi {
 		new_data
 	}
 
-	/// This may never happen, given the horrific quality of Win32 APIs
-	pub fn get_screenshot(_screen: usize) -> crate::screenshot::ScreenResult {
-		unsafe {
-			// Enumerate monitors, getting a handle and DC for requested monitor.
-			// loljk, because doing that on Windows is worse than death
-			let h_wnd_screen = GetDesktopWindow();
-			let h_dc_screen = GetDC(h_wnd_screen);
-			let width = GetSystemMetrics(SM_CXSCREEN);
-			let height = GetSystemMetrics(SM_CYSCREEN);
+	struct MonitorEnumerationResult {
+		width: u32,
+		height: u32,
+
+		requested_position: (i32, i32),
+		requested_size: (u32, u32),
+
+		data: VecDeque<u8>
+	}
+
+	unsafe extern "system" fn monitor_enum_proc(
+		hmonitor: W32Gdi::HMONITOR,
+		_hdc: W32Gdi::HDC,
+		_place: *mut windows_sys::Win32::Foundation::RECT,
+		data: windows_sys::Win32::Foundation::LPARAM,
+	) -> BOOL {
+		// There are probably so many memory safety issues hidden here...
+
+		let data: *mut MonitorEnumerationResult = data as *mut MonitorEnumerationResult;
+
+		let requested_position = (*data).requested_position;
+		let requested_size = (*data).requested_size;
+		
+		let info = get_monitor_info(hmonitor).unwrap();
+		let position = (info.monitorInfo.rcMonitor.left, info.monitorInfo.rcMonitor.top);
+		let size = (info.monitorInfo.rcMonitor.right - info.monitorInfo.rcMonitor.left, info.monitorInfo.rcMonitor.bottom - info.monitorInfo.rcMonitor.top);
+		println!("Monitor: {:?} ({:?}) {:?} ({:?})", position, requested_position, size, requested_size);
+		if position == requested_position && size == (requested_size.0 as i32, requested_size.1 as i32) {
+			// We found the monitor!
+			let desktop_window = GetDesktopWindow();
+			let h_wnd_screen = desktop_window;
+			let h_dc_screen = _hdc as HDC;
 
 			// Create a Windows Bitmap, and copy the bits into it
 			let h_dc = CreateCompatibleDC(h_dc_screen);
-			if h_dc == NULL { return Err("Can't get a Windows display.");}
+			if h_dc == NULL { return false.into(); } // Err("Can't get a Windows display.");
 
-			let h_bmp = CreateCompatibleBitmap(h_dc_screen, width, height);
-			if h_bmp == NULL { return Err("Can't create a Windows buffer");}
+			let h_bmp = CreateCompatibleBitmap(h_dc_screen, size.0, size.1);
+			if h_bmp == NULL { return false.into(); } // Err("Can't create a Windows buffer");
 
 			let res = SelectObject(h_dc, h_bmp);
 			if res == NULL || res == HGDI_ERROR {
-				return Err("Can't select Windows buffer.");
+				return false.into(); // Err("Can't select Windows buffer.");
 			}
 
-			let res = BitBlt(h_dc, 0, 0, width, height, h_dc_screen, 0, 0, SRCCOPY|CAPTUREBLT);
-			if res == 0 { return Err("Failed to copy screen to Windows buffer");}
+			let res = BitBlt(h_dc, 0, 0, size.0, size.1, h_dc_screen, 0, 0, SRCCOPY|CAPTUREBLT);
+			if res == 0 { return false.into(); } // Err("Failed to copy screen to Windows buffer");
 
 			// Get image info
 			let pixel_width: usize = 4;
 			let mut bmi = BITMAPINFO {
 				bmiHeader: BITMAPINFOHEADER {
 					biSize: size_of::<BITMAPINFOHEADER>() as DWORD,
-					biWidth: width as LONG,
-					biHeight: height as LONG,
+					biWidth: size.0 as LONG,
+					biHeight: size.1 as LONG,
 					biPlanes: 1,
 					biBitCount: 8*pixel_width as WORD,
 					biCompression: BI_RGB,
-					biSizeImage: (width * height * pixel_width as c_int) as DWORD,
+					biSizeImage: (size.0 * size.1 * pixel_width as c_int) as DWORD,
 					biXPelsPerMeter: 0,
 					biYPelsPerMeter: 0,
 					biClrUsed: 0,
@@ -223,13 +252,13 @@ mod ffi {
 			};
 
 			// Create a Vec for image
-			let size: usize = (width*height) as usize * pixel_width;
-			let mut data: Vec<u8> = Vec::with_capacity(size);
-			data.set_len(size);
+			let size_bytes: usize = (size.0*size.1) as usize * pixel_width;
+			let mut tmp_data: Vec<u8> = Vec::with_capacity(size_bytes);
+			tmp_data.set_len(size_bytes);
 
 			// copy bits into Vec
-			GetDIBits(h_dc, h_bmp, 0, height as DWORD,
-				&mut data[0] as *mut u8 as *mut c_void,
+			GetDIBits(h_dc, h_bmp, 0, size.1 as DWORD,
+				&mut tmp_data[0] as *mut u8 as *mut c_void,
 				&mut bmi as *mut BITMAPINFO as *mut c_void,
 				DIB_RGB_COLORS);
 
@@ -238,13 +267,62 @@ mod ffi {
 			DeleteDC(h_dc);
 			DeleteObject(h_bmp);
 
-			let data = flip_rows(data, height as usize, width as usize*pixel_width);
+			let tmp_data = flip_rows(tmp_data, size.0 as usize, size.1 as usize*pixel_width);
 
-			Ok(crate::screenshot::ScreenshotData {
-				data: data,
-				height: height as usize,
-				width: width as usize
-			})
+			// Copy image data into the data VecDeque
+			let result = &mut *data;
+			result.data.extend(tmp_data);
+			result.width = size.0 as u32;
+			result.height = size.1 as u32;
+
+			return false.into(); // Stop enumeration
 		}
+		
+		return true.into(); // Continue enumeration
+	}	
+
+	fn enumerate_monitors(requested_position: (i32, i32), requested_size: (u32, u32)) -> MonitorEnumerationResult {
+		let mut data: MonitorEnumerationResult = MonitorEnumerationResult {
+			width: 0,
+			height: 0,
+
+			requested_position,
+			requested_size,
+
+			data: VecDeque::new()
+		};
+		unsafe {
+			W32Gdi::EnumDisplayMonitors(
+				0,
+				std::ptr::null(),
+				Some(monitor_enum_proc),
+				&mut data as *mut _ as windows_sys::Win32::Foundation::LPARAM,
+			);
+		}
+		data.into()
+	}
+
+	fn get_monitor_info(hmonitor: W32Gdi::HMONITOR) -> Result<W32Gdi::MONITORINFOEXW, std::io::Error> {
+		let mut monitor_info: W32Gdi::MONITORINFOEXW = unsafe { std::mem::zeroed() };
+		monitor_info.monitorInfo.cbSize = std::mem::size_of::<W32Gdi::MONITORINFOEXW>() as u32;
+		let status = unsafe {
+			W32Gdi::GetMonitorInfoW(hmonitor, &mut monitor_info as *mut W32Gdi::MONITORINFOEXW as *mut W32Gdi::MONITORINFO)
+		};
+		if status == false.into() {
+			Err(std::io::Error::last_os_error())
+		} else {
+			Ok(monitor_info)
+		}
+	}
+
+	/// This may never happen, given the horrific quality of Win32 APIs
+	pub fn get_screenshot_from_matching(position: (i32, i32), size: (u32, u32)) -> crate::screenshot::ScreenResult {
+		let result: MonitorEnumerationResult = enumerate_monitors(position, size);
+
+		Ok(crate::screenshot::ScreenshotData {
+			data: result.data.into(),
+			height: result.height as usize,
+			width: result.width as usize
+		})
 	}
 }

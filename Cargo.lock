@@ -15,6 +15,7 @@ dependencies = [
  "leptess",
  "libc",
  "pixels",
+ "windows-sys 0.52.0",
  "winit",
 ]
 

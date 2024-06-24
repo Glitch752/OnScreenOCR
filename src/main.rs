@@ -2,7 +2,7 @@ use clipboard::{ClipboardContext, ClipboardProvider};
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::OCRHandler;
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
-use screenshot::screenshot_primary;
+use screenshot::screenshot_from_handle;
 use selection::Selection;
 use std::thread;
 use winit::application::ApplicationHandler;
@@ -93,8 +93,24 @@ impl ApplicationHandler for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, _event: ()) {
         if self.window_state.is_none() {
+            let global_mouse_position = MouseCursor::pos();
+            let monitor = event_loop.available_monitors().find(|monitor| {
+                monitor.position().x <= global_mouse_position.0
+                    && monitor.position().x + monitor.size().width as i32 >= global_mouse_position.0
+                    && monitor.position().y <= global_mouse_position.1
+                    && monitor.position().y + monitor.size().height as i32 >= global_mouse_position.1
+            });
+            
             // Need to screenshot before the window is visible
-            let screenshot = screenshot_primary();
+            let screenshot = screenshot_from_handle(
+                monitor.clone().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
+            );
+
+            // Temporary: save the screenshot
+            println!("{:?}", screenshot);
+            let image: image::ImageBuffer<image::Rgba<_>, _> = image::ImageBuffer::from_raw(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).unwrap();
+            image.save("screenshot.png").unwrap();
+
             self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
 
             // Create the window
@@ -104,7 +120,7 @@ impl ApplicationHandler for App {
                         .with_title("OCR Overlay")
                         .with_skip_taskbar(true)
                         .with_decorations(false)
-                        .with_fullscreen(Some(Fullscreen::Borderless(None)))
+                        .with_fullscreen(Some(Fullscreen::Borderless(monitor)))
                         .with_resizable(false)
                         .with_window_level(WindowLevel::AlwaysOnTop)
                         .with_visible(false),
@@ -147,7 +163,11 @@ impl ApplicationHandler for App {
             let pixels = &window_state.pixels;
             let shader_renderer = &mut window_state.shader_renderer;
             
-            let screenshot = screenshot_primary();
+            let window = &window_state.window;
+            let screenshot = screenshot_from_handle(
+                window.current_monitor().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
+            );
+
             self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
             let result = shader_renderer.write_screenshot_to_texture(pixels, screenshot);
             if result.is_err() {
@@ -354,7 +374,10 @@ impl ApplicationHandler for App {
 
                 pixels.resize_surface(new_size.width, new_size.height).expect("Unable to resize pixels surface");
                 pixels.resize_buffer(new_size.width, new_size.height).expect("Unable to resize pixels buffer");
-                let screenshot = screenshot_primary();
+
+                let screenshot = screenshot_from_handle(
+                    window.current_monitor().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
+                );
                 shader_renderer.resize(pixels, new_size.width, new_size.height, screenshot.bytes.as_slice()).expect("Unable to resize shader renderer");
             }
             _ => (),
