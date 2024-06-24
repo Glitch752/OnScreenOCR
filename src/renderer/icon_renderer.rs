@@ -76,6 +76,12 @@ impl IconLayouts {
             sub_layout.recalculate_positions();
         }
     }
+
+    pub fn initialize(&mut self) {
+        for sub_layout in self.layouts.iter_mut() {
+            sub_layout.initialize();
+        }
+    }
 }
 
 pub(crate) struct PositionedLayout {
@@ -125,6 +131,13 @@ impl PositionedLayout {
             }
         }
     }
+
+    pub fn initialize(&mut self) {
+        match &mut self.layout {
+            LayoutChild::Icon(_) => (),
+            LayoutChild::Layout(layout) => layout.initialize()
+        }
+    }
 }
 
 #[allow(unused)]
@@ -172,22 +185,39 @@ impl Layout {
         }
     }
 
+    pub fn initialize(&mut self) {
+        let mut icon_children_count = 0;
+        for child in self.children.iter_mut() {
+            match child {
+                LayoutChild::Icon(_) => icon_children_count += 1,
+                LayoutChild::Layout(layout) => layout.initialize()
+            }
+        }
+        
+        // There is 1 background child for every icon and 1 for every space between icons
+        let background_icons_required = if self.has_background { icon_children_count * 2 - 1 } else { 0 };
+        for _ in 0..background_icons_required {
+            self.background_children.push(create_background!((0, 0)));
+        }
+    }
+
     pub fn add_icon(&mut self, icon: Icon) {
         self.children.push(LayoutChild::Icon(icon));
     }
 
     pub fn icons(&self) -> Vec<&Icon> {
-        self.children.iter().flat_map(|child| match child {
+        // Make sure to return background icons first
+        self.background_children.iter().chain(self.children.iter().flat_map(|child| match child {
             LayoutChild::Icon(icon) => vec!(icon),
             LayoutChild::Layout(layout) => layout.icons()
-        }).collect()
+        })).collect()
     }
 
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
-        self.children.iter_mut().flat_map(|child| match child {
+        self.background_children.iter_mut().chain(self.children.iter_mut().flat_map(|child| match child {
             LayoutChild::Icon(icon) => vec!(icon),
             LayoutChild::Layout(layout) => layout.icons_mut()
-        }).collect()
+        })).collect()
     }
 
     pub fn calculate_size(&mut self) -> (f32, f32) {
@@ -261,31 +291,17 @@ impl Layout {
                 }
             }
         }
-        
+
         if !self.has_background {
             return;
         }
 
-        // There is 1 background child for every icon and 1 for every space between icons
-        let icon_children = self.children.iter().filter(|child| matches!(child, LayoutChild::Icon(_))).map(|child| match child {
-            LayoutChild::Icon(icon) => icon,
-            _ => unreachable!()
-        });
-        let background_icons_required = icon_children.clone().count() * 2 - 1;
-        if self.background_children.len() != background_icons_required {
-            if self.background_children.len() < background_icons_required {
-                let mut new_background_children = Vec::new();
-                for _ in 0..background_icons_required - self.background_children.len() {
-                    new_background_children.push(create_background!((0, 0)));
-                }
-                self.background_children.append(&mut new_background_children);
-            } else {
-                self.background_children.truncate(background_icons_required);
-            }
-        }
-
         let mut last_position: Option<(i32, i32)> = None;
         let mut background_icon_index = 0;
+        let icon_children = self.children.iter().filter_map(|child| match child {
+            LayoutChild::Icon(icon) => Some(icon),
+            LayoutChild::Layout(_) => None
+        });
         for icon in icon_children {
             let icon_position = icon.bounds.get_center();
             if let Some(last_position) = last_position {
@@ -372,20 +388,6 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
 
 impl IconRenderer {
     pub fn new(device: &Device, width: f32, height: f32) -> Self {
-        // let icons = vec![
-        //     create_background!((width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-        //     create_background!((width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-        //     create_background!((width / 2., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-        //     create_icon!("new-line", IconBehavior::Toggle, (width / 2. - ICON_SIZE / 2. - ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-        //     create_icon!("settings", IconBehavior::Click,  (width / 2. + ICON_SIZE / 2. + ICON_MARGIN / 3., ICON_SIZE / 2. + ICON_MARGIN * 2.)),
-        //     {
-        //         let mut icon = create_icon!("copy", IconBehavior::Click, (0, 0)); // Set on-the-fly
-        //         icon.click_callback = Some(Box::new(|| {
-        //             println!("Copy clicked!");
-        //         }));
-        //         icon
-        //     },
-        // ];
         let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
         menubar_layout.add_icon(create_icon!("new-line", IconBehavior::Toggle, (0, 0)));
         menubar_layout.add_icon(create_icon!("settings", IconBehavior::Click, (0, 0)));
@@ -398,7 +400,9 @@ impl IconRenderer {
         });
 
         let mut icon_layouts = IconLayouts::new();
-        icon_layouts.add_layout((width / 2., 100.), LayoutChild::Layout(menubar_layout));
+        icon_layouts.add_layout((width / 2., ICON_SIZE / 2. + 70.), LayoutChild::Layout(menubar_layout));
+
+        icon_layouts.initialize();
 
         let icon_count = icon_layouts.icons().len();
         let icon_variant_count = 13; // Needs to be manually defined for now; some icons have multiple variants and some are ued multiple times
