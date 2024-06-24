@@ -363,14 +363,13 @@ impl Renderer {
 
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
 
-        self.should_render_text = false;
-        if let Some(section) = self.get_ocr_section(ocr_preview_text, window_size, selection) {
-            self.text_brush.queue(device, queue, vec![&section]).unwrap();
-            self.should_render_text = true;
+        let ocr_section = self.get_ocr_section(ocr_preview_text, window_size, selection);
+        let mut sections = self.icon_renderer.get_text_sections();
+        if ocr_section.is_some() {
+            sections.push(ocr_section.as_ref().unwrap());
         }
-        let icon_text_sections = self.icon_renderer.get_text_sections();
-        self.should_render_text = self.should_render_text || icon_text_sections.len() > 0;
-        self.text_brush.queue(device, queue, icon_text_sections).unwrap();
+        self.should_render_text = sections.len() > 0;
+        self.text_brush.queue(device, queue, sections).unwrap();
 
         self.icon_renderer.update(queue, relative_mouse_pos);
     }
@@ -405,7 +404,7 @@ impl Renderer {
         self.render_background(&mut rpass, clip_rect);
         
         self.icon_renderer.render(&mut rpass);
-        
+
         if self.should_render_text {
             self.text_brush.draw(&mut rpass);
         }
