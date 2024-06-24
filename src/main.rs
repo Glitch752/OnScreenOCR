@@ -107,7 +107,6 @@ impl ApplicationHandler for App {
             );
 
             // Temporary: save the screenshot
-            println!("{:?}", screenshot);
             let image: image::ImageBuffer<image::Rgba<_>, _> = image::ImageBuffer::from_raw(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).unwrap();
             image.save("screenshot.png").unwrap();
 
