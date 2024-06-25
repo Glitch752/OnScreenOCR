@@ -108,9 +108,9 @@ impl OCRHandler {
     }
 
     pub fn update_ocr_language(&mut self, language_code: String) {
-        if let Some(Throttler) = &mut self.throttler {
-            Throttler.put(OCREvent::LanguageUpdated(language_code));
-            Throttler.put(OCREvent::SelectionChanged(self.last_selection_bounds.clone().unwrap()));
+        if let Some(throttler) = &mut self.throttler {
+            throttler.put(OCREvent::LanguageUpdated(language_code));
+            throttler.put(OCREvent::SelectionChanged(self.last_selection_bounds.clone().unwrap()));
         }
     }
 }
@@ -165,54 +165,74 @@ fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender
     tx.send(text).expect("Unable to send text");
 }
 
-
-
-
-#[derive(Debug, PartialEq, Eq)]
-struct Event<T> {
-    item: T,
-    release_at: Instant,
+enum State<Type> {
+    Empty,
+    Delay(Duration),
+    Ready(Type),
 }
 
-impl<T: Eq> Ord for Event<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.release_at.cmp(&self.release_at) // reverse ordering for min-heap
+struct OCRThrottlerState<Type> {
+    delay: Duration,
+    last_value: Option<Type>,
+    last_time: Instant,
+}
+
+impl<Type> OCRThrottlerState<Type> {
+    fn new(delay: Duration) -> Self {
+        Self {
+            delay,
+            last_value: None,
+            last_time: Instant::now(),
+        }
+    }
+
+    fn get_state(&mut self) -> State<Type> {
+        let elapsed = self.last_time.elapsed();
+        if elapsed < self.delay {
+            State::Delay(self.delay - elapsed)
+        } else {
+            if self.last_value.is_none() {
+                State::Empty
+            } else {
+                State::Ready(self.last_value.take().unwrap())
+            }
+        }
+    }
+
+    fn put(&mut self, value: Type) {
+        self.last_value = Some(value);
+        self.last_time = Instant::now();
     }
 }
 
-impl<T: Eq> PartialOrd for Event<T> {
-    fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-
-struct OCRThrottlerThread<B> {
-    mutex: Arc<Mutex<B>>,
+struct OCRThrottlerThread<Type> {
+    mutex: Arc<Mutex<OCRThrottlerState<Type>>>,
     thread: JoinHandle<()>
 }
 
-impl<B> OCRThrottlerThread<B> {
-    fn new<Type, RunFn, InitFn, InitData>(delay: Duration, mut f: RunFn, init_fn: InitFn) -> Self
+impl<Type> OCRThrottlerThread<Type> {
+    fn new<RunFn, InitFn, InitData>(delay: Duration, mut f: RunFn, init_fn: InitFn) -> Self
     where
-        Type: PartialEq,
+        Type: PartialEq + Send + 'static,
         RunFn: FnMut(Type, &mut InitData) + Send + 'static,
         InitFn: FnOnce() -> InitData + Send + 'static,
         InitData: 'static,
     {
-        let mutex: Arc<Mutex<Option<Type>>> = Arc::new(Mutex::new(None));
+        let mutex: Arc<Mutex<OCRThrottlerState<Type>>> = Arc::new(Mutex::new(OCRThrottlerState::new(delay)));
 
         let thread = thread::spawn({
             let mutex = mutex.clone();
             move || {
                 let mut init_data: InitData = init_fn();
 
-                // let state = mutex.lock().unwrap().get();
-                // match state {
-                //     State::Empty => thread::park(),
-                //     State::Wait(duration) => thread::sleep(duration),
-                //     State::Ready(data) => f(data, &mut init_data),
-                // }
+                loop {
+                    let state = mutex.lock().unwrap().get_state();
+                    match state {
+                        State::Empty => thread::park(),
+                        State::Delay(duration) => thread::sleep(duration),
+                        State::Ready(data) => f(data, &mut init_data),
+                    }
+                }
             }
         });
         Self {
@@ -228,16 +248,14 @@ impl<T: PartialEq> OCRThrottler<T> {
     pub fn new<F, G, R>(delay: Duration, f: F, init_fn: G) -> Self
     where
         F: FnMut(T, &mut R) + Send + 'static,
-        T: Send + IntHash + 'static,
+        T: Send + 'static,
         G: FnOnce() -> R + Send + 'static,
         R: 'static,
     {
         Self(OCRThrottlerThread::new(delay, f, init_fn))
     }
 
-    pub fn put(&self, data: T)
-    where
-        T: IntHash {
+    pub fn put(&self, data: T) {
         self.0.mutex.lock().unwrap().put(data);
         self.0.thread.thread().unpark();
     }
