@@ -6,6 +6,7 @@ use ocr_handler::OCRHandler;
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::screenshot_from_handle;
 use selection::Selection;
+use std::sync::mpsc;
 use std::thread;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -13,7 +14,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Fullscreen, Window, WindowId, WindowLevel};
-use renderer::IconContext;
+use renderer::{IconContext, IconEvent};
 
 mod ocr_handler;
 mod renderer;
@@ -59,14 +60,17 @@ struct App {
     ocr_handler: OCRHandler,
     relative_mouse_pos: (i32, i32),
 
-    icon_context: Option<IconContext>
+    icon_context: Option<IconContext>,
+    icon_event_receiver: Option<mpsc::Receiver<IconEvent>>,
 }
 
 impl App {
     fn redraw(&mut self) {
         if self.icon_context.is_none() {
-            self.icon_context = Some(IconContext::new());
+            self.create_icon_context();
         }
+
+        self.process_icon_events();
 
         let state = self.window_state.as_mut().unwrap();
 
@@ -95,6 +99,52 @@ impl App {
 
         if render_result.is_err() {
             println!("Error rendering: {:?}", render_result);
+        }
+    }
+
+    fn create_icon_context(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.icon_context = Some(IconContext::new(tx));
+        self.icon_event_receiver = Some(rx);
+    }
+
+    fn process_icon_events(&mut self) {
+        if self.icon_event_receiver.is_none() {
+            return;
+        }
+        let rx = self.icon_event_receiver.as_ref().unwrap();
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+
+        for event in events {
+            match event {
+                IconEvent::Close => {
+                    self.hide_window();
+                }
+                IconEvent::Copy => {
+                    self.attempt_copy();
+                }
+            }
+        }
+    }
+
+    fn attempt_copy(&mut self) {
+        if self.ocr_handler.ocr_preview_text.is_none() {
+            return;
+        }
+
+        // Copy the OCR text to the clipboard
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        ctx.set_contents(self.ocr_handler.ocr_preview_text.clone().unwrap()).expect("Unable to set clipboard contents");
+    }
+
+    fn hide_window(&mut self) {
+        self.window_state.as_ref().unwrap().window.set_visible(false);
+        if let Some(icon_context) = self.icon_context.as_ref() {
+            icon_context.settings.save();
         }
     }
 }
@@ -175,7 +225,7 @@ impl ApplicationHandler for App {
 
             // If the window is already open and on the same monitor, just hide it
             if window.is_visible() == Some(true) && window.current_monitor() == monitor {
-                window.set_visible(false);
+                self.hide_window();
                 return;
             }
             
@@ -212,6 +262,7 @@ impl ApplicationHandler for App {
             }
 
             self.selection.reset();
+            if let Some(ctx) = &mut self.icon_context { ctx.reset(); }
             self.redraw();
 
             let window_state = self.window_state.as_mut().unwrap();
@@ -263,10 +314,7 @@ impl ApplicationHandler for App {
 
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => {
-                        window.set_visible(false);
-                        if let Some(icon_context) = self.icon_context.as_ref() {
-                            icon_context.settings.save();
-                        }
+                        self.hide_window();
                     }
                     Key::Named(NamedKey::Shift) => {
                         self.selection.shift_held =
@@ -282,13 +330,7 @@ impl ApplicationHandler for App {
                     }
                     Key::Character("c") => {
                         if event.state == winit::event::ElementState::Pressed {
-                            if self.ocr_handler.ocr_preview_text.is_none() {
-                                return;
-                            }
-
-                            // Copy the OCR text to the clipboard
-                            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-                            ctx.set_contents(self.ocr_handler.ocr_preview_text.clone().unwrap());
+                            self.attempt_copy();
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
@@ -340,7 +382,7 @@ impl ApplicationHandler for App {
                     };
 
                     if self.icon_context.is_none() {
-                        self.icon_context = Some(IconContext::new());
+                        self.create_icon_context();
                     }
                     let was_handled = self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state, self.icon_context.as_mut().unwrap());
 

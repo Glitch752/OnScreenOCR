@@ -1,4 +1,5 @@
-pub use icon_renderer::IconContext;
+pub use icon_renderer::{IconContext, IconEvent};
+
 use icon_renderer::IconRenderer;
 use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError

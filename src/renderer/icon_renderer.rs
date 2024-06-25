@@ -1,20 +1,34 @@
+use std::sync::mpsc;
+
 use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 use winit::event::ElementState;
 
 use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::Matrix};
 use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE };
 
+pub enum IconEvent {
+    Copy,
+    Close
+}
+
 pub struct IconContext {
     pub settings: SettingsManager,
-    pub settings_panel_visible: bool
+    pub settings_panel_visible: bool,
+
+    pub(crate) channel: mpsc::Sender<IconEvent>
 }
 
 impl IconContext {
-    pub fn new() -> Self {
+    pub fn new(channel: mpsc::Sender<IconEvent>) -> Self {
         Self {
             settings: SettingsManager::new(),
-            settings_panel_visible: false
+            settings_panel_visible: false,
+            channel
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.settings_panel_visible = false;
     }
 }
 
@@ -130,12 +144,12 @@ impl IconRenderer {
         });
         menubar_layout.add_icon({
             let mut icon = create_icon!("copy", IconBehavior::Click);
-            icon.click_callback = Some(Box::new(|_| { println!("Copy clicked!"); }));
+            icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
             icon
         });
         menubar_layout.add_icon({
             let mut icon = create_icon!("close", IconBehavior::Click);
-            icon.click_callback = Some(Box::new(|_| { println!("Close clicked!"); }));
+            icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Close).expect("Unable to send close event"); }));
             icon
         });
 
@@ -162,15 +176,8 @@ impl IconRenderer {
             ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
             {
                 let mut icon = create_icon!("copy", IconBehavior::Click);
-                icon.bounds = Bounds {
-                    x: 0,
-                    y: 0,
-                    width: 25,
-                    height: 25
-                };
-                icon.click_callback = Some(Box::new(|_| {
-                    println!("Copy clicked!");
-                }));
+                icon.bounds = Bounds::new(0, 0, 25, 25);
+                icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
                 LayoutChild::Icon(icon)
             }
         );
