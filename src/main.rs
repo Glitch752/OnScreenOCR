@@ -1,3 +1,5 @@
+#![feature(duration_millis_float)]
+
 use clipboard::{ClipboardContext, ClipboardProvider};
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::OCRHandler;

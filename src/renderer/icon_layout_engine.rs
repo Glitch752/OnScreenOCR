@@ -30,7 +30,9 @@ macro_rules! create_icon {
                 behavior: $behavior,
                 click_callback: None,
                 get_active: None,
+
                 visible: true,
+                opacity: 1.0,
 
                 icon_normal_pos: get_icon_atlas_pos(concat!($id, ".png")),
                 icon_hovered_pos: get_icon_atlas_pos(concat!($id, "-hover.png")),
@@ -55,7 +57,9 @@ macro_rules! create_background {
                 behavior: IconBehavior::Visual,
                 click_callback: None,
                 get_active: None,
+
                 visible: true,
+                opacity: 1.0,
 
                 icon_normal_pos: get_icon_atlas_pos("background.png"),
                 icon_hovered_pos: get_icon_atlas_pos("background.png"),
@@ -95,6 +99,10 @@ impl IconLayouts {
 
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
         self.layouts.iter_mut().flat_map(|(_, sub_layout)| sub_layout.icons_mut()).collect()
+    }
+
+    pub fn text_mut(&mut self) -> Vec<&mut IconText> {
+        self.layouts.iter_mut().flat_map(|(_, sub_layout)| sub_layout.text_mut()).collect()
     }
 
     pub fn text_sections(&self) -> Vec<&OwnedSection> {
@@ -143,6 +151,14 @@ impl PositionedLayout {
         match &mut self.layout {
             LayoutChild::Icon(icon) => vec!(icon),
             LayoutChild::Layout(layout) => layout.icons_mut(),
+            _ => Vec::new()
+        }
+    }
+
+    pub fn text_mut(&mut self) -> Vec<&mut IconText> {
+        match &mut self.layout {
+            LayoutChild::Text(text) => vec!(text),
+            LayoutChild::Layout(layout) => layout.text_mut(),
             _ => Vec::new()
         }
     }
@@ -227,7 +243,8 @@ pub(crate) struct Layout {
 pub(crate) struct IconText {
     bounds: Bounds,
     text_section: OwnedSection,
-    visible: bool
+    visible: bool,
+    opacity: f32
 }
 
 impl IconText {
@@ -242,12 +259,20 @@ impl IconText {
                 layout: glyph_brush::Layout::default(),
                 text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0])],
             },
-            visible: true
+            visible: true,
+            opacity: 1.0
         }
     }
 
     pub fn update_section_position(&mut self) {
-        self.text_section.screen_position = (self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32);
+        self.text_section.screen_position = (self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32 - (1. - self.opacity) * 10.);
+    }
+
+    pub fn update(&mut self, delta: std::time::Duration) {
+        // Update opacity based on visibility, smoothly interpolatng between 0 and 1
+        let target_opacity = if self.visible { 1. } else { 0. };
+        self.opacity += (self.opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.025).exp());
+        self.update_section_position();
     }
 }
 
@@ -318,6 +343,14 @@ impl Layout {
             LayoutChild::Layout(layout) => layout.icons_mut(),
             _ => Vec::new()
         })).collect()
+    }
+
+    pub fn text_mut(&mut self) -> Vec<&mut IconText> {
+        self.children.iter_mut().flat_map(|child| match child {
+            LayoutChild::Text(text) => vec!(text),
+            LayoutChild::Layout(layout) => layout.text_mut(),
+            _ => Vec::new()
+        }).collect()
     }
 
     pub fn text_sections(&self) -> Vec<&OwnedSection> {

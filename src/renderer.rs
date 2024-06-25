@@ -74,7 +74,9 @@ pub(crate) struct Renderer {
     text_brush: TextBrush<FontRef<'static>>,
     should_render_text: bool,
 
-    icon_renderer: IconRenderer
+    icon_renderer: IconRenderer,
+
+    last_update: std::time::Instant,
 }
 
 impl Renderer {
@@ -229,7 +231,8 @@ impl Renderer {
                 wgpu::TextureFormat::Bgra8UnormSrgb
             ),
             should_render_text: false,
-            icon_renderer
+            icon_renderer,
+            last_update: std::time::Instant::now(),
         })
     }
 
@@ -359,6 +362,9 @@ impl Renderer {
         relative_mouse_pos: (i32, i32),
         icon_context: &IconContext
     ) {
+        let delta = self.last_update.elapsed();
+        self.last_update = std::time::Instant::now();
+
         let device = &context.device;
         let queue = &context.queue;
 
@@ -374,7 +380,7 @@ impl Renderer {
         self.should_render_text = sections.len() > 0;
         self.text_brush.queue(device, queue, sections).unwrap();
 
-        self.icon_renderer.update(queue, relative_mouse_pos, icon_context);
+        self.icon_renderer.update(queue, delta, relative_mouse_pos, icon_context);
     }
 
     fn render_background<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>, clip_rect: (u32, u32, u32, u32)) {

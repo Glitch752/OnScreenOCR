@@ -31,7 +31,10 @@ pub(crate) struct Icon {
     pub active: bool,
 
     pub bounds: Bounds,
+
     pub visible: bool,
+    pub opacity: f32,
+
     pub behavior: IconBehavior,
     pub click_callback: Option<Box<dyn Fn(&mut IconContext) -> ()>>,
     pub get_active: Option<Box<dyn Fn(&IconContext) -> bool>>,
@@ -130,8 +133,14 @@ impl IconRenderer {
             icon.click_callback = Some(Box::new(|_| { println!("Copy clicked!"); }));
             icon
         });
+        menubar_layout.add_icon({
+            let mut icon = create_icon!("close", IconBehavior::Click);
+            icon.click_callback = Some(Box::new(|_| { println!("Close clicked!"); }));
+            icon
+        });
 
         let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 2., false);
+        settings_layout.add_text(IconText::new("Settings".to_string()));
         settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text", {
             let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
             icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
@@ -446,6 +455,10 @@ impl IconRenderer {
         self.icons.icons_mut()
     }
 
+    pub fn text_mut(&mut self) -> Vec<&mut IconText> {
+        self.icons.text_mut()
+    }
+
     pub fn render<'pass>(&'pass self, rpass: &mut wgpu::RenderPass<'pass>) {
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
@@ -466,12 +479,14 @@ impl IconRenderer {
     pub fn update(
         &mut self,
         queue: &Queue,
+        delta: std::time::Duration,
         mouse_pos: (i32, i32),
         icon_context: &IconContext
     ) {
         self.icons.recalculate_positions(self.current_screen_size);
 
-        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, icon_context));
+        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, delta, icon_context));
+        self.text_mut().into_iter().for_each(|text| text.update(delta));
 
         self.update_icon_state_buffer(queue);
         self.update_icon_position_buffer(queue);
@@ -494,7 +509,7 @@ impl IconRenderer {
 
     fn update_icon_position_buffer(&mut self, queue: &Queue) {
         let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
-            vec![icon.bounds.x as f32, icon.bounds.y as f32, icon.bounds.width as f32, icon.bounds.height as f32]
+            vec![icon.bounds.x as f32, icon.bounds.y as f32 - (1. - icon.opacity) * 10., icon.bounds.width as f32, icon.bounds.height as f32]
         }).collect();
 
         queue.write_buffer(&self.instance_icon_position_buffer, 0, bytemuck::cast_slice(&instance_data));
@@ -511,7 +526,7 @@ impl IconRenderer {
             vec![
                 active_icon_pos.0 as f32 / self.icon_atlas_width as f32,
                 active_icon_pos.1 as f32 / self.icon_atlas_height as f32,
-                if icon.visible { 1.0 } else { 0.0 }
+                icon.opacity
             ]
         }).collect();
 
@@ -553,10 +568,14 @@ impl Icon {
         }
     }
 
-    pub fn update(&mut self, mouse_pos: (i32, i32), icon_context: &IconContext) {
+    pub fn update(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) {
         // Update hover
         self.hovered = self.bounds.contains(mouse_pos);
         self.active = self.get_active.as_ref().map_or(false, |get_active| get_active(icon_context)) || self.pressed;
+
+        // Update opacity based on visibility, smoothly interpolatng between 0 and 1
+        let target_opacity = if self.visible { 1. } else { 0. };
+        self.opacity += (self.opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.025).exp());
 
         // If not hovered and a click button, unselect
         if !self.hovered && self.pressed && matches!(self.behavior, IconBehavior::Click) {
