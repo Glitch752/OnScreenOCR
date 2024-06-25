@@ -102,7 +102,7 @@ impl OCRHandler {
 }
 
 fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender<String>) {
-    let pos_bounds = bounds.to_positive_size();
+    let mut pos_bounds = bounds.to_positive_size();
     if pos_bounds.width < 5 || pos_bounds.height < 5 {
         return;
     }
@@ -110,6 +110,13 @@ fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender
     // Get the current screenshot
     let screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot").clone().expect("No screenshot available");
     
+    if pos_bounds.x + pos_bounds.width > screenshot.width as i32 {
+        pos_bounds.width = screenshot.width as i32 - pos_bounds.x;
+    }
+    if pos_bounds.y + pos_bounds.height > screenshot.height as i32 {
+        pos_bounds.height = screenshot.height as i32 - pos_bounds.y;
+    }
+
     // Crop the screenshot
     let mut img: ImageBuffer<Rgba<_>, Vec<u8>> = image::ImageBuffer::from_raw(
         screenshot.width as u32,

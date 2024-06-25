@@ -2,11 +2,11 @@ use glyph_brush::{HorizontalAlign, OwnedSection, OwnedText};
 
 use crate::selection::{Bounds, Selection};
 
-use super::icon_renderer::IconRenderer;
+use super::{animation::{MoveDirection, SmoothMoveFadeAnimation}, icon_renderer::IconRenderer};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct OCRPreviewRenderer {
-    text_opacity: f32,
+    anim: SmoothMoveFadeAnimation,
     last_text: Option<String>,
     last_placement: Option<(f32, f32, HorizontalAlign)>,
 }
@@ -14,7 +14,7 @@ pub(crate) struct OCRPreviewRenderer {
 impl OCRPreviewRenderer {
     pub(crate) fn new() -> Self {
         Self {
-            text_opacity: 0.,
+            anim: SmoothMoveFadeAnimation::new(false, MoveDirection::Right, 6.),
             last_text: None,
             last_placement: None,
         }
@@ -82,26 +82,14 @@ impl OCRPreviewRenderer {
         let placement = placement.unwrap_or_else(|| self.last_placement.unwrap());
         self.last_placement = Some(placement);
 
-        let target_opacity = if ocr_preview_text.is_some() { 1. } else { 0. };
-        self.text_opacity += (self.text_opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.02).exp());
-        // Just in case something goes wrong
-        if self.text_opacity.is_nan() || self.text_opacity < 0. || self.text_opacity > 1. {
-            self.text_opacity = target_opacity;
-        }
-        if self.text_opacity < 0.01 {
-            self.last_text = None;
-            self.last_placement = None;
-            self.text_opacity = 0.;
-            return None;
-        }
-        
-        icon_renderer.update_text_icon_positions(ocr_preview_text.map(|_| (placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 18.0)));
+        self.anim.update(delta, ocr_preview_text.is_some());
+        self.anim.fade_move_direction = if placement.2 == HorizontalAlign::Left { MoveDirection::Right } else { MoveDirection::Left };
 
-        let animate_direction = if placement.2 == HorizontalAlign::Left { 1. } else { -1. };
+        icon_renderer.update_text_icon_positions(ocr_preview_text.map(|_| (placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 24.0)));
         return Some(OwnedSection::default()
-            .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9 * self.text_opacity]).with_scale(16.0))
-            .add_text(OwnedText::new(text).with_color([0.8, 0.8, 0.8, 0.6 * self.text_opacity]).with_scale(18.0))
-            .with_screen_position((placement.0 + (1. - self.text_opacity) * 5. * animate_direction, placement.1 - 18.0))
+            .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9 * self.anim.get_opacity()]).with_scale(16.0))
+            .add_text(OwnedText::new(text).with_color([0.8, 0.8, 0.8, 0.6 * self.anim.get_opacity()]).with_scale(18.0))
+            .with_screen_position(self.anim.move_point((placement.0, placement.1 - 18.0)))
             .with_layout(glyph_brush::Layout::default().h_align(placement.2)));
     }
 }

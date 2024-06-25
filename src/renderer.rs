@@ -13,6 +13,7 @@ use crate::{screenshot::Screenshot, selection::Selection};
 mod icon_renderer;
 mod icon_layout_engine;
 mod ocr_preview_renderer;
+mod animation;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

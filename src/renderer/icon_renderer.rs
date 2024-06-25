@@ -4,7 +4,7 @@ use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
 use winit::event::ElementState;
 
 use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::Matrix};
-use super::icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE };
+use super::{animation::SmoothMoveFadeAnimation, icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE }};
 
 pub enum IconEvent {
     Copy,
@@ -47,7 +47,7 @@ pub(crate) struct Icon {
     pub bounds: Bounds,
 
     pub visible: bool,
-    pub opacity: f32,
+    pub anim: SmoothMoveFadeAnimation,
 
     pub behavior: IconBehavior,
     pub click_callback: Option<Box<dyn Fn(&mut IconContext) -> ()>>,
@@ -516,7 +516,8 @@ impl IconRenderer {
 
     fn update_icon_position_buffer(&mut self, queue: &Queue) {
         let instance_data: Vec<f32> = self.icons().iter().flat_map(|icon| {
-            vec![icon.bounds.x as f32, icon.bounds.y as f32 - (1. - icon.opacity) * 10., icon.bounds.width as f32, icon.bounds.height as f32]
+            let pos = icon.anim.move_point((icon.bounds.x as f32, icon.bounds.y as f32));
+            vec![pos.0, pos.1, icon.bounds.width as f32, icon.bounds.height as f32]
         }).collect();
 
         queue.write_buffer(&self.instance_icon_position_buffer, 0, bytemuck::cast_slice(&instance_data));
@@ -533,7 +534,7 @@ impl IconRenderer {
             vec![
                 active_icon_pos.0 as f32 / self.icon_atlas_width as f32,
                 active_icon_pos.1 as f32 / self.icon_atlas_height as f32,
-                icon.opacity
+                icon.anim.get_opacity()
             ]
         }).collect();
 
@@ -580,13 +581,7 @@ impl Icon {
         self.hovered = self.bounds.contains(mouse_pos);
         self.active = self.get_active.as_ref().map_or(false, |get_active| get_active(icon_context)) || self.pressed;
 
-        // Update opacity based on visibility, smoothly interpolatng between 0 and 1
-        let target_opacity = if self.visible { 1. } else { 0. };
-        self.opacity += (self.opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.025).exp());
-        // Just in case something goes wrong
-        if self.opacity.is_nan() || self.opacity < 0. || self.opacity > 1. {
-            self.opacity = target_opacity;
-        }
+        self.anim.update(delta, self.visible);
 
         // If not hovered and a click button, unselect
         if !self.hovered && self.pressed && matches!(self.behavior, IconBehavior::Click) {

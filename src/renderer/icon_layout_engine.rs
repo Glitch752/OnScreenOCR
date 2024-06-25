@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use super::animation::MoveDirection;
+use super::animation::SmoothMoveFadeAnimation;
 use super::icon_renderer::*;
 use super::Bounds;
 
@@ -21,6 +23,7 @@ macro_rules! create_icon {
     ($id:literal, $behavior:expr) => {
         {
             use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE };
+            use crate::renderer::animation::{ SmoothMoveFadeAnimation, MoveDirection };
             Icon {
                 hovered: false,
                 pressed: false,
@@ -32,7 +35,7 @@ macro_rules! create_icon {
                 get_active: None,
 
                 visible: true,
-                opacity: 1.0,
+                anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),
 
                 icon_normal_pos: get_icon_atlas_pos(concat!($id, ".png")),
                 icon_hovered_pos: get_icon_atlas_pos(concat!($id, "-hover.png")),
@@ -48,6 +51,7 @@ macro_rules! create_background {
     ($bounds:expr) => {
         {
             use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE, ICON_MARGIN };
+            use crate::renderer::animation::{ SmoothMoveFadeAnimation, MoveDirection };
             Icon {
                 hovered: false,
                 pressed: false,
@@ -59,7 +63,7 @@ macro_rules! create_background {
                 get_active: None,
 
                 visible: true,
-                opacity: 1.0,
+                anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),
 
                 icon_normal_pos: get_icon_atlas_pos("background.png"),
                 icon_hovered_pos: get_icon_atlas_pos("background.png"),
@@ -244,7 +248,7 @@ pub(crate) struct IconText {
     bounds: Bounds,
     text_section: OwnedSection,
     visible: bool,
-    opacity: f32
+    anim: SmoothMoveFadeAnimation
 }
 
 impl IconText {
@@ -260,23 +264,16 @@ impl IconText {
                 text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0])],
             },
             visible: true,
-            opacity: 1.0
+            anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0)
         }
     }
 
     pub fn update_section_position(&mut self) {
-        self.text_section.screen_position = (self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32 - (1. - self.opacity) * 10.);
+        self.text_section.screen_position = self.anim.move_point((self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32));
     }
 
     pub fn update(&mut self, delta: std::time::Duration) {
-        // Update opacity based on visibility, smoothly interpolatng between 0 and 1
-        let target_opacity = if self.visible { 1. } else { 0. };
-        // TODO: Change here and under text icon to be a struct that manages the smooth interpolation
-        self.opacity += (self.opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.025).exp());
-        // Just in case something goes wrong
-        if self.opacity.is_nan() || self.opacity < 0. || self.opacity > 1. {
-            self.opacity = target_opacity;
-        }
+        self.anim.update(delta, self.visible);
         self.update_section_position();
     }
 }
