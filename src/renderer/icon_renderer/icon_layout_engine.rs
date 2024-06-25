@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use super::animation::MoveDirection;
-use super::animation::SmoothMoveFadeAnimation;
-use super::icon_renderer::*;
-use super::Bounds;
-use super::ZIndex;
+use super::super::{animation::MoveDirection, animation::SmoothMoveFadeAnimation, icon_renderer::*, Bounds, ZIndex};
 
 use glyph_brush::OwnedSection;
 use glyph_brush::OwnedText;
@@ -13,7 +9,7 @@ pub const ICON_SIZE: f32 = 40.0;
 pub const ICON_MARGIN: f32 = 10.0;
 pub const TEXT_HEIGHT: f32 = 20.0;
 
-static ATLAS_POSITIONS: &str = include_str!("../icons/atlas_positions.txt");
+static ATLAS_POSITIONS: &str = include_str!("../../icons/atlas_positions.txt");
 
 pub fn get_icon_atlas_pos(id: &str) -> (u32, u32) {
     let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().skip(1).collect::<Vec<&str>>();
@@ -23,7 +19,8 @@ pub fn get_icon_atlas_pos(id: &str) -> (u32, u32) {
 macro_rules! create_icon {
     ($id:literal, $behavior:expr) => {
         {
-            use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE };
+            use crate::renderer::icon_renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE };
+            use crate::renderer::icon_renderer::Icon;
             use crate::renderer::animation::{ SmoothMoveFadeAnimation, MoveDirection };
             Icon {
                 hovered: false,
@@ -51,7 +48,7 @@ pub(crate) use create_icon;
 macro_rules! create_background {
     ($bounds:expr) => {
         {
-            use crate::renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE, ICON_MARGIN };
+            use crate::renderer::icon_renderer::icon_layout_engine::{ get_icon_atlas_pos, ICON_SIZE, ICON_MARGIN };
             use crate::renderer::animation::{ SmoothMoveFadeAnimation, MoveDirection };
             Icon {
                 hovered: false,

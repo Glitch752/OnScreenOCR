@@ -1,17 +1,19 @@
 use std::sync::mpsc;
 
-use pixels::wgpu::{self, util::DeviceExt, Device, Queue};
+use glyph_brush::ab_glyph::FontRef;
+use icon_layout::get_icon_layouts;
+use pixels::{wgpu::{self, util::DeviceExt, Device, Queue}, Pixels};
 use winit::event::ElementState;
 
-use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::Matrix};
-use super::{animation::SmoothMoveFadeAnimation, icon_layout_engine::{create_icon, CrossJustify, Direction, IconLayouts, IconText, Layout, LayoutChild, ScreenLocation, ScreenRelativePosition, ICON_MARGIN, ICON_SIZE }};
+use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::{BrushBuilder, Matrix, TextBrush}};
+use super::animation::SmoothMoveFadeAnimation;
+use icon_layout_engine::{create_icon, IconLayouts};
 
-pub enum IconEvent {
-    Copy,
-    Close,
-    ActiveOCRLeft,
-    ActiveOCRRight
-}
+pub use icon_layout_engine::TEXT_HEIGHT;
+pub use icon_layout::IconEvent;
+
+mod icon_layout_engine;
+mod icon_layout;
 
 pub struct IconContext {
     pub settings: SettingsManager,
@@ -80,7 +82,10 @@ pub(crate) struct IconRenderer {
 
     pub matrix_buffer: wgpu::Buffer,
 
-    pub current_screen_size: (f32, f32)
+    pub current_screen_size: (f32, f32),
+
+    pub text_brush: TextBrush<FontRef<'static>>,
+    pub should_render_text: bool,
 }
 
 macro_rules! image {
@@ -112,104 +117,10 @@ fn create_texture(device: &Device, icon_atlas_width: u32, icon_atlas_height: u32
     })
 }
 
-macro_rules! horizontal_setting_layout {
-    ($text:expr, $icon:block) => {
-        {
-            let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-            layout.add_text(IconText::new($text.to_string()));
-            layout.add_icon($icon);
-            layout
-        }
-    };
-}
-
 impl IconRenderer {
-    pub fn new(device: &Device, width: f32, height: f32) -> Self {
-        let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-        menubar_layout.add_icon({
-            let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
-            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
-            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
-            icon
-        });
-        menubar_layout.add_icon({
-            let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
-            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
-            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
-            icon
-        });
-        menubar_layout.add_icon({
-            let mut icon = create_icon!("settings", IconBehavior::SettingToggle);
-            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings_panel_visible }));
-            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings_panel_visible = !ctx.settings_panel_visible; }));
-            icon
-        });
-        menubar_layout.add_icon({
-            let mut icon = create_icon!("copy", IconBehavior::Click);
-            icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
-            icon
-        });
-        menubar_layout.add_icon({
-            let mut icon = create_icon!("close", IconBehavior::Click);
-            icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Close).expect("Unable to send close event"); }));
-            icon
-        });
-
-        let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 2., false);
-        settings_layout.add_text(IconText::new("Settings".to_string()));
-        settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text (1)", {
-            let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
-            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
-            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
-            icon
-        }));
-        settings_layout.add_layout(horizontal_setting_layout!("Reformat and correct text (2)", {
-            let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
-            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
-            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
-            icon
-        }));
-        settings_layout.add_layout(horizontal_setting_layout!("Background blur enabled (3)", {
-            let mut icon = create_icon!("blur", IconBehavior::SettingToggle);
-            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.background_blur_enabled }));
-            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.background_blur_enabled = !ctx.settings.background_blur_enabled; }));
-            icon
-        }));
-        settings_layout.add_layout({
-            let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-            layout.add_icon({
-                let mut icon = create_icon!("left", IconBehavior::Click);
-                icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::ActiveOCRLeft).expect("Unable to send active OCR left event"); }));
-                icon
-            });
-            layout.add_text({
-                let mut text = IconText::new("_______________________________________________________".to_string()); // Plenty of characters to make the text allocate enough background tiles
-                text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Current OCR: {}", ctx.settings.get_ocr_language_data().name) }));
-                text
-            });
-            layout.add_icon({
-                let mut icon = create_icon!("right", IconBehavior::Click);
-                icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::ActiveOCRRight).expect("Unable to send active OCR right event"); }));
-                icon
-            });
-            layout
-        });
-
-        let mut icon_layouts = IconLayouts::new();
-        icon_layouts.add_layout(
-            String::from("copy"),
-            ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
-            {
-                let mut icon = create_icon!("copy", IconBehavior::Click);
-                icon.bounds = Bounds::new(0, 0, 25, 25);
-                icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
-                LayoutChild::Icon(icon)
-            }
-        );
-        icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 5. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
-
-        icon_layouts.initialize();
+    pub fn new(pixels: &Pixels, width: f32, height: f32) -> Self {
+        let device = pixels.device();
+        let icon_layouts = get_icon_layouts();
 
         let icon_count = icon_layouts.icons().len();
 
@@ -452,7 +363,16 @@ impl IconRenderer {
 
             matrix_buffer,
 
-            current_screen_size: (width, height)
+            current_screen_size: (width, height),
+            
+            text_brush: BrushBuilder::using_font_bytes(include_bytes!("../../fonts/DejaVuSans.ttf")).expect("Unable to load font")
+                .build(
+                    device,
+                    width as u32,
+                    height as u32,
+                    pixels.render_texture_format()
+                ),
+            should_render_text: false,
         }
     }
 
@@ -489,19 +409,6 @@ impl IconRenderer {
         self.icons.icons_mut()
     }
 
-    pub fn render<'pass>(&'pass self, rpass: &mut wgpu::RenderPass<'pass>) {
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        // Vertex position
-        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        // Instance position
-        rpass.set_vertex_buffer(1, self.instance_icon_position_buffer.slice(..));
-        // Instance state
-        rpass.set_vertex_buffer(2, self.instance_icon_state_buffer.slice(..));
-        rpass.draw_indexed(0..6, 0, 0..self.icons().len() as u32);
-    }
-
     pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
         let mut found = false;
         self.icons_mut().iter_mut().for_each(|icon| found = icon.mouse_event(mouse_pos, state, icon_context) || found);
@@ -510,6 +417,7 @@ impl IconRenderer {
 
     pub fn update(
         &mut self,
+        device: &Device,
         queue: &Queue,
         delta: std::time::Duration,
         mouse_pos: (i32, i32),
@@ -523,10 +431,29 @@ impl IconRenderer {
         self.update_icon_position_buffer(queue);
 
         self.icons.set_visible("settings", icon_context.settings_panel_visible);
+
+        // Update text
+        let sections: Vec<&glyph_brush::OwnedSection> = self.icons.text_sections();
+        self.should_render_text = sections.len() > 0;
+        self.text_brush.queue(device, queue, sections).unwrap();
     }
 
-    pub fn get_text_sections(&self) -> Vec<&glyph_brush::OwnedSection> {
-        self.icons.text_sections()
+    pub fn render<'pass>(&'pass self, rpass: &mut wgpu::RenderPass<'pass>) {
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        // Vertex position
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        // Instance position
+        rpass.set_vertex_buffer(1, self.instance_icon_position_buffer.slice(..));
+        // Instance state
+        rpass.set_vertex_buffer(2, self.instance_icon_state_buffer.slice(..));
+        rpass.draw_indexed(0..6, 0, 0..self.icons().len() as u32);
+
+        // Render text
+        if self.should_render_text {
+            self.text_brush.draw(rpass);
+        }
     }
 
     pub fn update_text_icon_positions(&mut self, pos: Option<(f32, f32)>) {

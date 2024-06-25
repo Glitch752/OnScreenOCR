@@ -5,12 +5,11 @@ use icon_renderer::IconRenderer;
 use ocr_preview_renderer::OCRPreviewRenderer;
 use pixels::{wgpu, PixelsContext, TextureError};
 use winit::event::ElementState;
-use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush}};
+use crate::selection::Bounds;
 
 use crate::{screenshot::Screenshot, selection::Selection};
 
 mod icon_renderer;
-mod icon_layout_engine;
 mod ocr_preview_renderer;
 mod animation;
 mod background_renderer;
@@ -32,10 +31,6 @@ impl Into<f32> for ZIndex {
 #[allow(dead_code)] // Many of these fields are actually used
 pub(crate) struct Renderer {
     background_renderer: BackgroundRenderer,
-
-    text_brush: TextBrush<FontRef<'static>>,
-    should_render_text: bool,
-
     icon_renderer: IconRenderer,
     ocr_preview_renderer: OCRPreviewRenderer,
 
@@ -49,24 +44,13 @@ impl Renderer {
         height: u32,
         initial_background_data: &[u8]
     ) -> Result<Self, TextureError> {
-        let device = pixels.device();
-
-        let mut icon_renderer = IconRenderer::new(device, width as f32, height as f32);
+        let mut icon_renderer = IconRenderer::new(pixels, width as f32, height as f32);
         icon_renderer.initialize(pixels.queue());
 
-        let ocr_preview_renderer = OCRPreviewRenderer::new();
-
+        let ocr_preview_renderer = OCRPreviewRenderer::new(pixels, width, height);
         let background_renderer = BackgroundRenderer::new(pixels, width, height, initial_background_data)?;
 
         Ok(Self {
-            text_brush: BrushBuilder::using_font_bytes(include_bytes!("../fonts/DejaVuSans.ttf")).expect("Unable to load font")
-                .build(
-                    device,
-                    width,
-                    height,
-                    pixels.render_texture_format()
-                ),
-            should_render_text: false,
             icon_renderer,
             ocr_preview_renderer,
             background_renderer,
@@ -90,7 +74,7 @@ impl Renderer {
         height: u32,
         new_background_data: &[u8]
     ) -> Result<(), TextureError> {
-        self.text_brush.resize_view(width as f32, height as f32, pixels.queue());
+        self.ocr_preview_renderer.resize(pixels, width, height);
         self.icon_renderer.resize_view(width as f32, height as f32, pixels.queue());
         self.background_renderer.resize(pixels, width, height, new_background_data)?;
 
@@ -120,17 +104,9 @@ impl Renderer {
         let device = &context.device;
         let queue = &context.queue;
 
+        self.ocr_preview_renderer.update(context, window_size, selection, ocr_preview_text, icon_context, delta, &mut self.icon_renderer);
         self.background_renderer.update(queue, window_size, selection, icon_context);
-
-        let ocr_section = self.ocr_preview_renderer.get_ocr_section(ocr_preview_text, window_size, &mut self.icon_renderer, delta, selection, icon_context);
-        let mut sections = self.icon_renderer.get_text_sections();
-        if ocr_section.is_some() {
-            sections.push(ocr_section.as_ref().unwrap());
-        }
-        self.should_render_text = sections.len() > 0;
-        self.text_brush.queue(device, queue, sections).unwrap();
-
-        self.icon_renderer.update(queue, delta, relative_mouse_pos, icon_context);
+        self.icon_renderer.update(device, queue, delta, relative_mouse_pos, icon_context);
     }
 
     pub(crate) fn render(
@@ -153,11 +129,7 @@ impl Renderer {
         });
 
         self.background_renderer.render(&mut rpass, clip_rect);
-
-        if self.should_render_text {
-            self.text_brush.draw(&mut rpass);
-        }
-        
+        self.ocr_preview_renderer.render(&mut rpass);
         self.icon_renderer.render(&mut rpass);
     }
 }

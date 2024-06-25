@@ -1,14 +1,17 @@
-use glyph_brush::{BuiltInLineBreaker, HorizontalAlign, OwnedSection, OwnedText};
+use glyph_brush::{ab_glyph::FontRef, BuiltInLineBreaker, HorizontalAlign, OwnedSection, OwnedText};
+use pixels::{wgpu, PixelsContext};
 
-use crate::selection::{Bounds, Selection};
+use crate::{selection::{Bounds, Selection}, wgpu_text::{BrushBuilder, TextBrush}};
 
-use super::{animation::{MoveDirection, SmoothMoveFadeAnimation}, icon_layout_engine::TEXT_HEIGHT, icon_renderer::IconRenderer, ZIndex};
+use super::{animation::{MoveDirection, SmoothMoveFadeAnimation}, icon_renderer::{TEXT_HEIGHT, IconRenderer}, IconContext, ZIndex};
 
-#[derive(Debug, Clone, Default)]
 pub(crate) struct OCRPreviewRenderer {
     anim: SmoothMoveFadeAnimation,
     last_text: Option<String>,
     last_placement: Option<PreviewTextPlacement>,
+
+    text_brush: TextBrush<FontRef<'static>>,
+    should_render_text: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -20,11 +23,24 @@ pub(crate) struct PreviewTextPlacement {
 }
 
 impl OCRPreviewRenderer {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(
+        pixels: &pixels::Pixels,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let device = pixels.device();
         Self {
             anim: SmoothMoveFadeAnimation::new(false, MoveDirection::Right, 6.),
             last_text: None,
             last_placement: None,
+            text_brush: BrushBuilder::using_font_bytes(include_bytes!("../../fonts/DejaVuSans.ttf")).expect("Unable to load font")
+                .build(
+                    device,
+                    width,
+                    height,
+                    pixels.render_texture_format()
+                ),
+            should_render_text: false,
         }
     }
     
@@ -129,5 +145,45 @@ impl OCRPreviewRenderer {
         );
         self.last_placement = Some(placement);
         section
+    }
+
+    pub(crate) fn resize(
+        &mut self,
+        pixels: &pixels::Pixels,
+        width: u32,
+        height: u32
+    ) -> () {
+        self.text_brush.resize_view(width as f32, height as f32, pixels.queue());
+    }
+
+    pub(crate) fn update(
+        &mut self,
+        context: &PixelsContext,
+        window_size: (u32, u32),
+        selection: Selection,
+        ocr_preview_text: Option<String>,
+        icon_context: &IconContext,
+        delta: std::time::Duration,
+        icon_renderer: &mut IconRenderer
+    ) {
+        let device = &context.device;
+        let queue = &context.queue;
+
+        let ocr_section = self.get_ocr_section(ocr_preview_text, window_size, icon_renderer, delta, selection, icon_context);
+        self.should_render_text = ocr_section.is_some();
+        if ocr_section.is_some() {
+            self.text_brush.queue(device, queue, vec![ocr_section.as_ref().unwrap()]).unwrap();
+        } else {
+            self.text_brush.queue(device, queue, Vec::<&OwnedSection>::new()).unwrap();
+        }
+    }
+
+    pub(crate) fn render<'pass>(
+        &'pass mut self,
+        rpass: &mut wgpu::RenderPass<'pass>
+    ) -> () {
+        if self.should_render_text {
+            self.text_brush.draw(rpass);
+        }
     }
 }
