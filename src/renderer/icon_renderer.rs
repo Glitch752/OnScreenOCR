@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use glyph_brush::ab_glyph::FontRef;
+use glyph_brush::{ab_glyph::FontRef, OwnedSection, OwnedText};
 use icon_layout::get_icon_layouts;
 use pixels::{wgpu::{self, util::DeviceExt, Device, Queue}, Pixels};
 use winit::event::ElementState;
@@ -18,6 +18,7 @@ mod icon_layout;
 pub struct IconContext {
     pub settings: SettingsManager,
     pub settings_panel_visible: bool,
+    pub copy_key_held: bool,
 
     pub(crate) channel: mpsc::Sender<IconEvent>
 }
@@ -27,6 +28,7 @@ impl IconContext {
         Self {
             settings: SettingsManager::new(),
             settings_panel_visible: false,
+            copy_key_held: false,
             channel
         }
     }
@@ -57,10 +59,49 @@ pub(crate) struct Icon {
     pub click_callback: Option<Box<dyn Fn(&mut IconContext) -> ()>>,
     pub get_active: Option<Box<dyn Fn(&IconContext) -> bool>>,
 
+    pub tooltip_text: Option<String>,
+
     pub(crate) icon_normal_pos: (u32, u32),
     pub(crate) icon_hovered_pos: (u32, u32),
     pub(crate) icon_selected_pos: (u32, u32),
     pub(crate) icon_selected_hovered_pos: (u32, u32)
+}
+
+pub(crate) struct TooltipState {
+    pub(crate) start_time: std::time::Instant,
+    pub(crate) position: (f32, f32),
+    pub(crate) text: String,
+    pub(crate) hidden: bool
+}
+
+impl TooltipState {
+    pub fn new(bounds: Bounds, text: String) -> Self {
+        Self {
+            start_time: std::time::Instant::now(),
+            position: (bounds.x as f32 + bounds.width as f32 / 2., bounds.y as f32 + bounds.height as f32 + 10.),
+            text,
+            hidden: false
+        }
+    }
+
+    pub fn elapsed(&self) -> std::time::Duration {
+        self.start_time.elapsed()
+    }
+
+    pub fn should_show(&self) -> bool {
+        self.elapsed() > std::time::Duration::from_secs_f32(0.4) && !self.hidden
+    }
+}
+
+impl Default for TooltipState {
+    fn default() -> Self {
+        Self {
+            start_time: std::time::Instant::now(),
+            position: (0., 0.),
+            text: String::new(),
+            hidden: true
+        }
+    }
 }
 
 pub(crate) struct IconRenderer {
@@ -86,6 +127,10 @@ pub(crate) struct IconRenderer {
 
     pub text_brush: TextBrush<FontRef<'static>>,
     pub should_render_text: bool,
+
+    pub icon_tooltip_state: TooltipState,
+    pub icon_tooltip_anim: SmoothMoveFadeAnimation,
+    pub icon_tooltip_section: OwnedSection
 }
 
 macro_rules! image {
@@ -373,6 +418,12 @@ impl IconRenderer {
                     pixels.render_texture_format()
                 ),
             should_render_text: false,
+
+            icon_tooltip_state: TooltipState::default(),
+            icon_tooltip_anim: SmoothMoveFadeAnimation::new(false, super::animation::MoveDirection::Up, 10.),
+            icon_tooltip_section: OwnedSection::default()
+                .add_text(OwnedText::new("").with_scale(18.0)) // Color and position are set when updating
+                .with_layout(glyph_brush::Layout::default_single_line().h_align(glyph_brush::HorizontalAlign::Center))
         }
     }
 
@@ -425,7 +476,20 @@ impl IconRenderer {
     ) {
         self.icons.recalculate_positions(self.current_screen_size);
 
-        self.icons.update_all(mouse_pos, delta, icon_context);
+        let hover_state = self.icons.update_all(mouse_pos, delta, icon_context);
+        if let Some(mut state) = hover_state {
+            if self.icon_tooltip_state.hidden {
+                self.icon_tooltip_state.hidden = false;
+                self.icon_tooltip_state.start_time = state.start_time;
+            }
+            state.start_time = self.icon_tooltip_state.start_time;
+            if state.should_show() {
+                self.icon_tooltip_state = state;
+            }
+        } else {
+            self.icon_tooltip_state.hidden = true;
+        }
+        self.icon_tooltip_anim.update(delta, self.icon_tooltip_state.should_show());
 
         self.update_icon_state_buffer(queue);
         self.update_icon_position_buffer(queue);
@@ -433,7 +497,13 @@ impl IconRenderer {
         self.icons.set_visible("settings", icon_context.settings_panel_visible);
 
         // Update text
-        let sections: Vec<&glyph_brush::OwnedSection> = self.icons.text_sections();
+        let mut sections: Vec<&glyph_brush::OwnedSection> = self.icons.text_sections();
+        if self.icon_tooltip_anim.visible_at_all() {
+            self.icon_tooltip_section.screen_position = self.icon_tooltip_anim.move_point(self.icon_tooltip_state.position);
+            self.icon_tooltip_section.text[0].text = self.icon_tooltip_state.text.clone();
+            self.icon_tooltip_section.text[0].extra.color = [1.0, 1.0, 1.0, self.icon_tooltip_anim.get_opacity()];
+            sections.push(&self.icon_tooltip_section);
+        }
         self.should_render_text = sections.len() > 0;
         self.text_brush.queue(device, queue, sections).unwrap();
     }
@@ -531,7 +601,7 @@ impl Icon {
         }
     }
 
-    pub fn update(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) {
+    pub fn update(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) -> Option<TooltipState> {
         // Update hover
         self.hovered = self.bounds.contains(mouse_pos);
         self.active = self.get_active.as_ref().map_or(false, |get_active| get_active(icon_context)) || self.pressed;
@@ -541,6 +611,12 @@ impl Icon {
         // If not hovered and a click button, unselect
         if !self.hovered && self.pressed && matches!(self.behavior, IconBehavior::Click) {
             self.pressed = false;
+        }
+
+        if self.hovered && self.tooltip_text.is_some() {
+            Some(TooltipState::new(self.bounds, self.tooltip_text.clone().unwrap()))
+        } else {
+            None
         }
     }
 }

@@ -339,6 +339,10 @@ impl ApplicationHandler for App {
                             event.state == winit::event::ElementState::Pressed;
                     }
                     Key::Character("c") => {
+                        if self.icon_context.is_none() {
+                            self.create_icon_context();
+                        }
+                        self.icon_context.as_mut().unwrap().copy_key_held = event.state == winit::event::ElementState::Pressed;
                         if event.state == winit::event::ElementState::Pressed {
                             self.attempt_copy();
                         }
@@ -369,6 +373,23 @@ impl ApplicationHandler for App {
                             self.selection.bounds.x += move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
                             self.ocr_handler.selection_changed(self.selection);
+                        }
+                    }
+
+                    // Toggle settings
+                    Key::Character("1") | Key::Character("2") | Key::Character("3") | Key::Character("4") => {
+                        if event.state == winit::event::ElementState::Pressed && !event.repeat {
+                            if self.icon_context.is_none() {
+                                self.create_icon_context();
+                            }
+                            let settings = &mut self.icon_context.as_mut().unwrap().settings;
+                            match event.logical_key.as_ref() {
+                                Key::Character("1") => settings.maintain_newline = !settings.maintain_newline,
+                                Key::Character("2") => settings.reformat_and_correct = !settings.reformat_and_correct,
+                                Key::Character("3") => settings.background_blur_enabled = !settings.background_blur_enabled,
+                                Key::Character("4") => settings.add_pilcrow_in_preview = !settings.add_pilcrow_in_preview,
+                                _ => (),
+                            }
                         }
                     }
                     _ => (),

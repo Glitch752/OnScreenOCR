@@ -17,28 +17,34 @@ pub fn get_icon_layouts() -> IconLayouts {
         let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
         icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
+        icon.tooltip_text = Some("Maintain newlines in text (1)".to_string());
         icon
     });
     menubar_layout.add_icon({
         let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
         icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
+        icon.tooltip_text = Some("Reformat and correct text (2)".to_string());
         icon
     });
     menubar_layout.add_icon({
         let mut icon = create_icon!("settings", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings_panel_visible }));
         icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings_panel_visible = !ctx.settings_panel_visible; }));
+        icon.tooltip_text = Some("Settings".to_string());
         icon
     });
     menubar_layout.add_icon({
         let mut icon = create_icon!("copy", IconBehavior::Click);
         icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
+        icon.get_active = Some(Box::new(|ctx| { ctx.copy_key_held }));
+        icon.tooltip_text = Some("Copy (C)".to_string());
         icon
     });
     menubar_layout.add_icon({
         let mut icon = create_icon!("close", IconBehavior::Click);
         icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Close).expect("Unable to send close event"); }));
+        icon.tooltip_text = Some("Close (Esc)".to_string());
         icon
     });
 
@@ -94,6 +100,7 @@ pub fn get_icon_layouts() -> IconLayouts {
             let mut icon = create_icon!("copy", IconBehavior::Click);
             icon.bounds = Bounds::new(0, 0, 25, 25);
             icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
+            icon.get_active = Some(Box::new(|ctx| { ctx.copy_key_held }));
             LayoutChild::Icon(icon)
         }
     );

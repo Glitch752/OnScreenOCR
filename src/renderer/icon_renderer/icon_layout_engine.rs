@@ -32,6 +32,8 @@ macro_rules! create_icon {
                 click_callback: None,
                 get_active: None,
 
+                tooltip_text: None,
+
                 visible: true,
                 anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),
 
@@ -59,6 +61,8 @@ macro_rules! create_background {
                 behavior: IconBehavior::Visual,
                 click_callback: None,
                 get_active: None,
+
+                tooltip_text: None,
 
                 visible: true,
                 anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),
@@ -119,10 +123,15 @@ impl IconLayouts {
         }
     }
 
-    pub fn update_all(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) {
+    pub fn update_all(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) -> Option<TooltipState> {
+        let mut hover_state: Option<TooltipState> = None;
         for (_, sub_layout) in self.layouts.iter_mut() {
-            sub_layout.update_all(mouse_pos, delta, icon_context);
+            let layout_hover_state = sub_layout.update_all(mouse_pos, delta, icon_context);
+            if layout_hover_state.is_some() {
+                hover_state = layout_hover_state;
+            }
         }
+        hover_state
     }
 }
 
@@ -223,14 +232,22 @@ impl PositionedLayout {
         }
     }
 
-    pub fn update_all(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) {
-        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, delta, icon_context));
+    pub fn update_all(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) -> Option<TooltipState> {
+        let mut hover_state: Option<TooltipState> = None;
+        self.icons_mut().into_iter().for_each(|icon| {
+            let icon_hover_state = icon.update(mouse_pos, delta, icon_context);
+            if icon_hover_state.is_some() {
+                hover_state = icon_hover_state
+            }
+        });
         
         let mut any_text_changed = false;
         self.text_mut().into_iter().for_each(|text| { any_text_changed = text.update(delta, icon_context) || any_text_changed; });
         if any_text_changed {
             self.recalculate_positions(self.last_screen_size, true);
         }
+
+        return hover_state;
     }
 }
 
