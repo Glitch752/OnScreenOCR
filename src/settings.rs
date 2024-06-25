@@ -19,6 +19,7 @@ pub struct SettingsManager {
     pub maintain_newline: bool,
     pub reformat_and_correct: bool,
     pub ocr_language_code: String,
+    pub background_blur_enabled: bool,
 }
 
 impl Default for SettingsManager {
@@ -30,7 +31,11 @@ impl Default for SettingsManager {
 impl SettingsManager {
     pub fn new() -> Self {
         if let Ok(encoded) = std::fs::read(SETTINGS_PATH) {
-            return bincode::deserialize(&encoded).unwrap();
+            return bincode::deserialize(&encoded).unwrap_or_else(|_| {
+                eprintln!("Failed to deserialize settings, using default settings and overwriting the file");
+                std::fs::remove_file(SETTINGS_PATH).unwrap();
+                Self::default()
+            })
         }
 
         // Default settings
@@ -38,6 +43,7 @@ impl SettingsManager {
             maintain_newline: true,
             reformat_and_correct: true,
             ocr_language_code: DEFAULT_OCR_LANGUAGE.code.to_string(),
+            background_blur_enabled: true,
         }
     }
 

@@ -318,7 +318,7 @@ impl Renderer {
         let device = &context.device;
         let queue = &context.queue;
 
-        let locals = Locals::new(selection, window_size, true);
+        let locals = Locals::new(selection, window_size, icon_context.settings.background_blur_enabled);
 
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
 

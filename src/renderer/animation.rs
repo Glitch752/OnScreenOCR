@@ -63,10 +63,10 @@ impl SmoothMoveFadeAnimation {
     pub fn move_point(&self, point: (f32, f32)) -> (f32, f32) {
         let (x, y) = point;
         match self.fade_move_direction {
-            MoveDirection::Up => (x, y - (1. - self.fade_move_amount) * self.visible_ratio),
-            MoveDirection::Down => (x, y + (1. - self.fade_move_amount) * self.visible_ratio),
-            MoveDirection::Left => (x - (1. - self.fade_move_amount) * self.visible_ratio, y),
-            MoveDirection::Right => (x + (1. - self.fade_move_amount) * self.visible_ratio, y)
+            MoveDirection::Up => (x, y - self.fade_move_amount * (1. - self.visible_ratio)),
+            MoveDirection::Down => (x, y + self.fade_move_amount * (1. - self.visible_ratio)),
+            MoveDirection::Left => (x - self.fade_move_amount * (1. - self.visible_ratio), y),
+            MoveDirection::Right => (x + self.fade_move_amount * (1. - self.visible_ratio), y)
         }
     }
 

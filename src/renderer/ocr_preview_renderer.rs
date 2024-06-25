@@ -85,7 +85,7 @@ impl OCRPreviewRenderer {
         self.anim.update(delta, ocr_preview_text.is_some());
         self.anim.fade_move_direction = if placement.2 == HorizontalAlign::Left { MoveDirection::Right } else { MoveDirection::Left };
 
-        icon_renderer.update_text_icon_positions(ocr_preview_text.map(|_| (placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 24.0)));
+        icon_renderer.update_text_icon_positions(ocr_preview_text.map(|_| (placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 18.0)));
         return Some(OwnedSection::default()
             .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9 * self.anim.get_opacity()]).with_scale(16.0))
             .add_text(OwnedText::new(text).with_color([0.8, 0.8, 0.8, 0.6 * self.anim.get_opacity()]).with_scale(18.0))

@@ -167,10 +167,16 @@ impl IconRenderer {
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
             icon
         }));
+        settings_layout.add_layout(horizontal_setting_layout!("Background blur enabled (3)", {
+            let mut icon = create_icon!("blur", IconBehavior::SettingToggle);
+            icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.background_blur_enabled }));
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.background_blur_enabled = !ctx.settings.background_blur_enabled; }));
+            icon
+        }));
 
         let mut icon_layouts = IconLayouts::new();
         icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 3. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
+        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 4. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
         icon_layouts.add_layout(
             String::from("copy"),
             ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
