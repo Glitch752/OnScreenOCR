@@ -53,6 +53,10 @@ impl OCRHandler {
         *current_screenshot = Box::new(Some(screenshot));
     }
 
+    pub fn before_reopen_window(&mut self) {
+        self.ocr_preview_text = None;
+    }
+
     pub fn selection_changed(&mut self, latest_selection: Selection) {
         if self.debouncer.is_none() {
             self.initialize_debouncer();

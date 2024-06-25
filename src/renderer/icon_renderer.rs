@@ -155,13 +155,13 @@ impl IconRenderer {
 
         let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 2., false);
         settings_layout.add_text(IconText::new("Settings".to_string()));
-        settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text", {
+        settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text (1)", {
             let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
             icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
             icon
         }));
-        settings_layout.add_layout(horizontal_setting_layout!("Reformat and correct text", {
+        settings_layout.add_layout(horizontal_setting_layout!("Reformat and correct text (2)", {
             let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
             icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));

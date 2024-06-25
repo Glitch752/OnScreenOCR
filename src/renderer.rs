@@ -1,10 +1,10 @@
 pub use icon_renderer::{IconContext, IconEvent};
 
 use icon_renderer::IconRenderer;
+use ocr_preview_renderer::OCRPreviewRenderer;
 use pixels::{
     check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError
 };
-use glyph_brush::{HorizontalAlign, OwnedSection, OwnedText};
 use winit::event::ElementState;
 use crate::{selection::Bounds, wgpu_text::{glyph_brush::ab_glyph::FontRef, BrushBuilder, TextBrush}};
 
@@ -12,6 +12,7 @@ use crate::{screenshot::Screenshot, selection::Selection};
 
 mod icon_renderer;
 mod icon_layout_engine;
+mod ocr_preview_renderer;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -76,6 +77,7 @@ pub(crate) struct Renderer {
     should_render_text: bool,
 
     icon_renderer: IconRenderer,
+    ocr_preview_renderer: OCRPreviewRenderer,
 
     last_update: std::time::Instant,
 }
@@ -216,6 +218,8 @@ impl Renderer {
         let mut icon_renderer = IconRenderer::new(device, width as f32, height as f32);
         icon_renderer.initialize(pixels.queue());
 
+        let ocr_preview_renderer = OCRPreviewRenderer::new();
+
         Ok(Self {
             texture,
             texture_view,
@@ -233,7 +237,8 @@ impl Renderer {
             ),
             should_render_text: false,
             icon_renderer,
-            last_update: std::time::Instant::now(),
+            ocr_preview_renderer,
+            last_update: std::time::Instant::now()
         })
     }
 
@@ -289,67 +294,6 @@ impl Renderer {
         Ok(())
     }
 
-    fn get_preview_text_placement(
-        &self,
-        window_size: (u32, u32),
-        bounds: Bounds,
-        text_lines: i32
-    ) -> Option<(f32, f32, glyph_brush::HorizontalAlign)> {
-        let bounds = bounds.to_positive_size();
-        if bounds.width == 0 || bounds.height == 0 {
-            return None;
-        }
-
-        let left_side_space = bounds.x;
-        let right_side_space = window_size.0 as i32 - (bounds.x + bounds.width);
-
-        let margin = 10;
-
-        let y = std::cmp::min(bounds.y, window_size.1 as i32 - ((text_lines - 1) * 19 + margin));
-
-        if left_side_space > right_side_space {
-            Some((
-                (bounds.x - margin) as f32,
-                y as f32,
-                glyph_brush::HorizontalAlign::Right
-            ))
-        } else {
-            Some((
-                (bounds.x + bounds.width + margin) as f32,
-                y as f32,
-                glyph_brush::HorizontalAlign::Left
-            ))
-        }
-    }
-
-    pub(crate) fn get_ocr_section(
-        &mut self,
-        ocr_preview_text: Option<String>,
-        window_size: (u32, u32),
-        selection: Selection
-    ) -> Option<OwnedSection> {
-        if ocr_preview_text.is_none() {
-            self.icon_renderer.update_text_icon_positions(None);
-            return None;
-        }
-
-        let text = ocr_preview_text.unwrap();
-        let placement = self.get_preview_text_placement(window_size, selection.bounds, text.lines().count() as i32);
-        if placement.is_none() {
-            self.icon_renderer.update_text_icon_positions(None);
-            return None;
-        }
-        let placement = placement.unwrap();
-        
-        self.icon_renderer.update_text_icon_positions(Some((placement.0 + (if placement.2 == HorizontalAlign::Left { -24. } else { 24. }), placement.1 - 18.0)));
-
-        return Some(OwnedSection::default()
-            .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9]).with_scale(16.0))
-            .add_text(OwnedText::new(text).with_color([0.8, 0.8, 0.8, 0.6]).with_scale(18.0))
-            .with_screen_position((placement.0, placement.1 - 18.0))
-            .with_layout(glyph_brush::Layout::default().h_align(placement.2)));
-    }
-
     pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
         self.icon_renderer.mouse_event(mouse_pos, state, icon_context)
     }
@@ -377,7 +321,7 @@ impl Renderer {
 
         queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
 
-        let ocr_section = self.get_ocr_section(ocr_preview_text, window_size, selection);
+        let ocr_section = self.ocr_preview_renderer.get_ocr_section(ocr_preview_text, window_size, &mut self.icon_renderer, delta, selection);
         let mut sections = self.icon_renderer.get_text_sections();
         if ocr_section.is_some() {
             sections.push(ocr_section.as_ref().unwrap());

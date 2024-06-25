@@ -204,12 +204,11 @@ impl ApplicationHandler for App {
                 pixels,
                 shader_renderer,
             });
-
-            self.redraw();
             
             let window = &self.window_state.as_ref().unwrap().window;
             window.set_visible(true);
             window.focus_window();
+            self.redraw();
         } else {
             // Move the window to the monitor with the mouse
             let global_mouse_position = MouseCursor::pos();
@@ -251,6 +250,7 @@ impl ApplicationHandler for App {
             let shader_renderer = &mut window_state.shader_renderer;
 
             shader_renderer.before_reopen_window();
+            self.ocr_handler.before_reopen_window();
             
             let window = &window_state.window;
             let screenshot = screenshot_from_handle(
@@ -265,12 +265,12 @@ impl ApplicationHandler for App {
 
             self.selection.reset();
             if let Some(ctx) = &mut self.icon_context { ctx.reset(); }
-            self.redraw();
 
             let window_state = self.window_state.as_mut().unwrap();
             let window = &window_state.window;
             window.set_visible(true);
             window.focus_window();
+            self.redraw();
         }
     }
 

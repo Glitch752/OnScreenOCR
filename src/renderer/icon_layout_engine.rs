@@ -271,7 +271,12 @@ impl IconText {
     pub fn update(&mut self, delta: std::time::Duration) {
         // Update opacity based on visibility, smoothly interpolatng between 0 and 1
         let target_opacity = if self.visible { 1. } else { 0. };
+        // TODO: Change here and under text icon to be a struct that manages the smooth interpolation
         self.opacity += (self.opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.025).exp());
+        // Just in case something goes wrong
+        if self.opacity.is_nan() || self.opacity < 0. || self.opacity > 1. {
+            self.opacity = target_opacity;
+        }
         self.update_section_position();
     }
 }
