@@ -249,6 +249,8 @@ impl ApplicationHandler for App {
 
             let pixels = &window_state.pixels;
             let shader_renderer = &mut window_state.shader_renderer;
+
+            shader_renderer.before_reopen_window();
             
             let window = &window_state.window;
             let screenshot = screenshot_from_handle(

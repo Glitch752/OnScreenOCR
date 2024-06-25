@@ -583,6 +583,10 @@ impl Icon {
         // Update opacity based on visibility, smoothly interpolatng between 0 and 1
         let target_opacity = if self.visible { 1. } else { 0. };
         self.opacity += (self.opacity - target_opacity) * (1. - (delta.as_millis_f32() * 0.025).exp());
+        // Just in case something goes wrong
+        if self.opacity.is_nan() || self.opacity < 0. || self.opacity > 1. {
+            self.opacity = target_opacity;
+        }
 
         // If not hovered and a click button, unselect
         if !self.hovered && self.pressed && matches!(self.behavior, IconBehavior::Click) {

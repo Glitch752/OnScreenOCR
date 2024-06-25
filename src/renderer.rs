@@ -354,6 +354,10 @@ impl Renderer {
         self.icon_renderer.mouse_event(mouse_pos, state, icon_context)
     }
 
+    pub(crate) fn before_reopen_window(&mut self) {
+        self.last_update = std::time::Instant::now();
+    }
+
     pub(crate) fn update(
         &mut self,
         context: &PixelsContext,
