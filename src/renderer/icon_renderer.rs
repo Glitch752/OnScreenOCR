@@ -124,7 +124,7 @@ macro_rules! horizontal_setting_layout {
 }
 
 impl IconRenderer {
-    pub fn new(device: &Device, width: f32, height: f32) -> Self {
+    pub fn new(device: &Device, depth_stencil: wgpu::DepthStencilState, width: f32, height: f32) -> Self {
         let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
         menubar_layout.add_icon({
             let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
@@ -196,8 +196,6 @@ impl IconRenderer {
         });
 
         let mut icon_layouts = IconLayouts::new();
-        icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 5. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
         icon_layouts.add_layout(
             String::from("copy"),
             ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
@@ -208,6 +206,8 @@ impl IconRenderer {
                 LayoutChild::Icon(icon)
             }
         );
+        icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
+        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 5. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
 
         icon_layouts.initialize();
 
@@ -407,7 +407,7 @@ impl IconRenderer {
                 }],
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(depth_stencil),
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,

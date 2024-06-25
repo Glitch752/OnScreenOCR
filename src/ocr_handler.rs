@@ -31,6 +31,7 @@ pub(crate) struct OCRHandler {
     pub ocr_result_sender: mpsc::Sender<String>,
     pub ocr_result_receiver: mpsc::Receiver<String>,
     pub ocr_preview_text: Option<String>,
+    pub last_selection_bounds: Option<Bounds>, // Used to recalculate the same OCR when language changes
 }
 
 impl Default for OCRHandler {
@@ -41,6 +42,7 @@ impl Default for OCRHandler {
             ocr_result_sender: tx,
             ocr_result_receiver: rx,
             ocr_preview_text: None,
+            last_selection_bounds: None,
         }
     }
 }
@@ -68,6 +70,8 @@ impl OCRHandler {
             .as_mut()
             .unwrap()
             .put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
+        
+        self.last_selection_bounds = Some(latest_selection.bounds);
     }
 
     pub fn update_ocr_preview_text(&mut self) {
@@ -109,6 +113,7 @@ impl OCRHandler {
     pub fn update_ocr_language(&mut self, language_code: String) {
         if let Some(debouncer) = &mut self.debouncer {
             debouncer.put(OCREvent::LanguageUpdated(language_code));
+            debouncer.put(OCREvent::SelectionChanged(self.last_selection_bounds.clone().unwrap()));
         }
     }
 }

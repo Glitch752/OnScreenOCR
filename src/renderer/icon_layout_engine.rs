@@ -4,6 +4,7 @@ use super::animation::MoveDirection;
 use super::animation::SmoothMoveFadeAnimation;
 use super::icon_renderer::*;
 use super::Bounds;
+use super::ZIndex;
 
 use glyph_brush::OwnedSection;
 use glyph_brush::OwnedText;
@@ -286,7 +287,7 @@ impl IconText {
                 screen_position: (0.0, 0.0),
                 bounds: (f32::INFINITY, f32::INFINITY),
                 layout: glyph_brush::Layout::default(),
-                text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0])],
+                text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]).with_z(ZIndex::IconText)],
             },
             visible: true,
             anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),

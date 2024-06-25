@@ -8,12 +8,10 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 ## TODO
 - [ ] Ability to capture screenshots (since we effectively do that anyway)
 - [ ] Change cursor to crosshair when selecting region
-- [ ] Add support for other languages
 - [ ] Test and add support for MacOS and Linux
 - [ ] Tooltips when hovering over buttons
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
-- [ ] Make settings close when creating selection
 - [ ] Allow for configuring other tesseract options (e.g. blacklisted characters, etc.)
   - [ ] Allow exporting with tesseract's TSV mode (and maybe some others)
 

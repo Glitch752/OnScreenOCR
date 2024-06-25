@@ -5,6 +5,8 @@ struct VertexOutput {
     @location(1) opacity: f32
 }
 
+const ICON_Z: f32 = 0.1;
+
 struct Matrix {
     v: mat4x4<f32>,
 }
@@ -22,7 +24,7 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
     out.tex_coord = position / vec2<f32>(atlas_dimensions) + icon_state.xy;
-    out.clip_position = ortho.v * vec4<f32>(position * instance_position.zw + instance_position.xy, 0.0, 1.0);
+    out.clip_position = ortho.v * vec4<f32>(position * instance_position.zw + instance_position.xy, ICON_Z, 1.0);
     out.opacity = icon_state.z;
     return out;
 }

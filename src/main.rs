@@ -403,14 +403,18 @@ impl ApplicationHandler for App {
                                 self.selection.bounds.y = y;
                                 self.selection.bounds.width = 0;
                                 self.selection.bounds.height = 0;
+                                self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                             } else {
                                 self.selection.start_drag_location = (x, y);
                                 self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
                             }
                             self.selection.mouse_down = true;
-                            self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                         } else {
                             self.selection.mouse_down = false;
+                        }
+
+                        if let Some(ctx) = &mut self.icon_context {
+                            ctx.settings_panel_visible = false;
                         }
                     }
 
