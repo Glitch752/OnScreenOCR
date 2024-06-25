@@ -11,17 +11,6 @@ pub enum IconEvent {
     ActiveOCRRight
 }
 
-macro_rules! horizontal_setting_layout {
-    ($text:expr, $icon:block) => {
-        {
-            let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-            layout.add_text(IconText::new($text.to_string()));
-            layout.add_icon($icon);
-            layout
-        }
-    };
-}
-
 pub fn get_icon_layouts() -> IconLayouts {
     let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
     menubar_layout.add_icon({
@@ -54,31 +43,29 @@ pub fn get_icon_layouts() -> IconLayouts {
     });
 
     let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 1.5, false);
+    
+    macro_rules! horizontal_setting_layout {
+        ($name:literal, $icon:literal, $setting:ident) => {
+            settings_layout.add_layout({
+                let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
+                layout.add_text(IconText::new($name.to_string()));
+                layout.add_icon({
+                    let mut icon = create_icon!($icon, IconBehavior::SettingToggle);
+                    icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.$setting }));
+                    icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.$setting = !ctx.settings.$setting; }));
+                    icon
+                });
+                layout
+            });
+        };
+    }
+
     settings_layout.add_text(IconText::new("Settings".to_string()));
-    settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text (1)", {
-        let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
-        icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
-        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
-        icon
-    }));
-    settings_layout.add_layout(horizontal_setting_layout!("Reformat and correct text (2)", {
-        let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
-        icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
-        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
-        icon
-    }));
-    settings_layout.add_layout(horizontal_setting_layout!("Background blur enabled (3)", {
-        let mut icon = create_icon!("blur", IconBehavior::SettingToggle);
-        icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.background_blur_enabled }));
-        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.background_blur_enabled = !ctx.settings.background_blur_enabled; }));
-        icon
-    }));
-    settings_layout.add_layout(horizontal_setting_layout!("Add pilcrows to preview (4)", {
-        let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
-        icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.add_pilcrow_in_preview }));
-        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.add_pilcrow_in_preview = !ctx.settings.add_pilcrow_in_preview; }));
-        icon
-    }));
+    horizontal_setting_layout!("Maintain newlines in text (1)", "new-line", maintain_newline);
+    horizontal_setting_layout!("Reformat and correct text (2)", "fix-text", reformat_and_correct);
+    horizontal_setting_layout!("Background blur enabled (3)", "blur", background_blur_enabled);
+    horizontal_setting_layout!("Add pilcrows to preview (4)", "return", add_pilcrow_in_preview);
+
     settings_layout.add_layout({
         let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
         layout.add_icon({

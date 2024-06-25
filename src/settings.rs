@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 static OCR_LANGUAGES: [OCRLanguage; 2] = [
     OCRLanguage { code: "eng", name: "English" },
-    OCRLanguage { code: "deu", name: "German" },
+    OCRLanguage { code: "deu", name: "German  " }, // Spaces after this are intentional to make the layout look better
 ];
 static DEFAULT_OCR_LANGUAGE: OCRLanguage = OCR_LANGUAGES[0];
 
