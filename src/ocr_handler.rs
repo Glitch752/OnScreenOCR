@@ -1,7 +1,5 @@
 use image::{GenericImage, ImageBuffer, Rgba};
-use std::{sync::{mpsc, Arc, LazyLock, Mutex}, time::Duration};
-use debounce::buffer::{EventBuffer, Get, State};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{sync::{mpsc, Arc, LazyLock, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
 use crate::{screenshot::Screenshot, selection::{Bounds, Selection}};
@@ -27,7 +25,7 @@ impl PartialEq for OCREvent {
 }
 
 pub(crate) struct OCRHandler {
-    pub debouncer: Option<OCRDebouncer<OCREvent>>,
+    pub throttler: Option<OCRThrottler<OCREvent>>,
     pub ocr_result_sender: mpsc::Sender<String>,
     pub ocr_result_receiver: mpsc::Receiver<String>,
     pub ocr_preview_text: Option<String>,
@@ -38,7 +36,7 @@ impl Default for OCRHandler {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel::<String>();
         OCRHandler {
-            debouncer: None,
+            throttler: None,
             ocr_result_sender: tx,
             ocr_result_receiver: rx,
             ocr_preview_text: None,
@@ -63,10 +61,10 @@ impl OCRHandler {
     }
 
     pub fn selection_changed(&mut self, latest_selection: Selection) {
-        if self.debouncer.is_none() {
-            self.initialize_debouncer();
+        if self.throttler.is_none() {
+            self.initialize_throttler();
         }
-        self.debouncer
+        self.throttler
             .as_mut()
             .unwrap()
             .put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
@@ -88,10 +86,9 @@ impl OCRHandler {
         self.ocr_result_receiver.try_recv().ok()
     }
 
-    fn initialize_debouncer(&mut self) {
-        // TODO: Don't let OCR thread get behind
+    fn initialize_throttler(&mut self) {
         let tx = self.ocr_result_sender.clone();
-        self.debouncer = Some(OCRDebouncer::new::<_, _, InitData>(
+        self.throttler = Some(OCRThrottler::new::<_, _, InitData>(
             DEBOUNE_TIME,
             move |event, init_data| match event {
                 OCREvent::SelectionChanged(bounds) => {
@@ -111,9 +108,9 @@ impl OCRHandler {
     }
 
     pub fn update_ocr_language(&mut self, language_code: String) {
-        if let Some(debouncer) = &mut self.debouncer {
-            debouncer.put(OCREvent::LanguageUpdated(language_code));
-            debouncer.put(OCREvent::SelectionChanged(self.last_selection_bounds.clone().unwrap()));
+        if let Some(Throttler) = &mut self.throttler {
+            Throttler.put(OCREvent::LanguageUpdated(language_code));
+            Throttler.put(OCREvent::SelectionChanged(self.last_selection_bounds.clone().unwrap()));
         }
     }
 }
@@ -171,37 +168,51 @@ fn perform_ocr(bounds: Bounds, leptess: &mut leptess::LepTess, tx: &mpsc::Sender
 
 
 
+#[derive(Debug, PartialEq, Eq)]
+struct Event<T> {
+    item: T,
+    release_at: Instant,
+}
 
-struct OCRDebouncerThread<B> {
+impl<T: Eq> Ord for Event<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.release_at.cmp(&self.release_at) // reverse ordering for min-heap
+    }
+}
+
+impl<T: Eq> PartialOrd for Event<T> {
+    fn partial_cmp(&self, other: &Self) -> std::option::Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+
+struct OCRThrottlerThread<B> {
     mutex: Arc<Mutex<B>>,
     thread: JoinHandle<()>
 }
 
-impl<B> OCRDebouncerThread<B> {
-    fn new<F, G, R>(buffer: B, mut f: F, init_fn: G) -> Self
+impl<B> OCRThrottlerThread<B> {
+    fn new<Type, RunFn, InitFn, InitData>(delay: Duration, mut f: RunFn, init_fn: InitFn) -> Self
     where
-        B: Get + Send + 'static,
-        F: FnMut(B::Data, &mut R) + Send + 'static,
-        G: FnOnce() -> R + Send + 'static,
-        R: 'static,
+        Type: PartialEq,
+        RunFn: FnMut(Type, &mut InitData) + Send + 'static,
+        InitFn: FnOnce() -> InitData + Send + 'static,
+        InitData: 'static,
     {
-        let mutex = Arc::new(Mutex::new(buffer));
-        let stopped = Arc::new(AtomicBool::new(false));
+        let mutex: Arc<Mutex<Option<Type>>> = Arc::new(Mutex::new(None));
 
         let thread = thread::spawn({
             let mutex = mutex.clone();
-            let stopped = stopped.clone();
             move || {
-                let mut init_data: R = init_fn();
+                let mut init_data: InitData = init_fn();
 
-                while !stopped.load(Ordering::Relaxed) {
-                    let state = mutex.lock().unwrap().get();
-                    match state {
-                        State::Empty => thread::park(),
-                        State::Wait(duration) => thread::sleep(duration),
-                        State::Ready(data) => f(data, &mut init_data),
-                    }
-                }
+                // let state = mutex.lock().unwrap().get();
+                // match state {
+                //     State::Empty => thread::park(),
+                //     State::Wait(duration) => thread::sleep(duration),
+                //     State::Ready(data) => f(data, &mut init_data),
+                // }
             }
         });
         Self {
@@ -211,20 +222,22 @@ impl<B> OCRDebouncerThread<B> {
     }
 }
 
-pub struct OCRDebouncer<T>(OCRDebouncerThread<EventBuffer<T>>);
+pub struct OCRThrottler<T>(OCRThrottlerThread<T>);
 
-impl<T: PartialEq> OCRDebouncer<T> {
+impl<T: PartialEq> OCRThrottler<T> {
     pub fn new<F, G, R>(delay: Duration, f: F, init_fn: G) -> Self
     where
         F: FnMut(T, &mut R) + Send + 'static,
-        T: Send + 'static,
+        T: Send + IntHash + 'static,
         G: FnOnce() -> R + Send + 'static,
         R: 'static,
     {
-        Self(OCRDebouncerThread::new(EventBuffer::new(delay), f, init_fn))
+        Self(OCRThrottlerThread::new(delay, f, init_fn))
     }
 
-    pub fn put(&self, data: T) {
+    pub fn put(&self, data: T)
+    where
+        T: IntHash {
         self.0.mutex.lock().unwrap().put(data);
         self.0.thread.thread().unpark();
     }

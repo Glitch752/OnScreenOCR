@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 bytemuck = { version = "1.16.1", features = ["derive"] }
-debounce = "0.2.2"
 image = "0.25.1"
 inputbot = "0.6"
 leptess = "0.14.0"
