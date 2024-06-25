@@ -124,7 +124,7 @@ macro_rules! horizontal_setting_layout {
 }
 
 impl IconRenderer {
-    pub fn new(device: &Device, depth_stencil: wgpu::DepthStencilState, width: f32, height: f32) -> Self {
+    pub fn new(device: &Device, width: f32, height: f32) -> Self {
         let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
         menubar_layout.add_icon({
             let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
@@ -407,7 +407,7 @@ impl IconRenderer {
                 }],
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(depth_stencil),
+            depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,

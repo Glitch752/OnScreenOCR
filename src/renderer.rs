@@ -88,8 +88,6 @@ pub(crate) struct Renderer {
     background_pipeline: wgpu::RenderPipeline,
     locals_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
-    depth_texture: wgpu::Texture,
-    depth_view: wgpu::TextureView,
 
     text_brush: TextBrush<FontRef<'static>>,
     should_render_text: bool,
@@ -201,16 +199,6 @@ impl Renderer {
             &locals_buffer,
         );
 
-        let depth_texture = create_depth_texture(pixels, width, height)?;
-        let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let depth_stencil_state = wgpu::DepthStencilState {
-            format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::LessEqual,
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        };
-
         // Create pipeline
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Renderer pipeline layout"),
@@ -226,7 +214,7 @@ impl Renderer {
                 buffers: &[vertex_buffer_layout],
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(depth_stencil_state.clone()),
+            depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &module,
@@ -243,7 +231,7 @@ impl Renderer {
             multiview: None,
         });
 
-        let mut icon_renderer = IconRenderer::new(device, depth_stencil_state.clone(), width as f32, height as f32);
+        let mut icon_renderer = IconRenderer::new(device, width as f32, height as f32);
         icon_renderer.initialize(pixels.queue());
 
         let ocr_preview_renderer = OCRPreviewRenderer::new();
@@ -255,13 +243,10 @@ impl Renderer {
             bg_bind_group_layout: bind_group_layout,
             background_bind_group: bind_group,
             background_pipeline: render_pipeline,
-            depth_texture,
-            depth_view,
 
             locals_buffer,
             vertex_buffer,
             text_brush: BrushBuilder::using_font_bytes(include_bytes!("../fonts/DejaVuSans.ttf")).expect("Unable to load font")
-                .with_depth_stencil(Some(depth_stencil_state))
                 .build(
                     device,
                     width,
@@ -312,9 +297,6 @@ impl Renderer {
     ) -> Result<(), TextureError> {
         self.texture = create_texture_with_data(pixels, width, height, new_background_data)?;
         self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        self.depth_texture = create_depth_texture(pixels, width, height)?;
-        self.depth_view = self.depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
         
         self.background_bind_group = create_bind_group(
             pixels.device(),
@@ -392,14 +374,7 @@ impl Renderer {
                     store: true,
                 },
             })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: true
-                }),
-                stencil_ops: None,
-            }),
+            depth_stencil_attachment: None,
         });
 
         self.render_background(&mut rpass, clip_rect);
@@ -436,34 +411,6 @@ fn create_texture_with_data(
     };
 
     Ok(device.create_texture_with_data(pixels.queue(), &texture_descriptor, data))
-}
-
-fn create_depth_texture(
-    pixels: &pixels::Pixels,
-    width: u32,
-    height: u32,
-) -> Result<wgpu::Texture, TextureError> {
-    let device = pixels.device();
-
-    let size = wgpu::Extent3d {
-        width: width,
-        height: height,
-        depth_or_array_layers: 1,
-    };
-    let desc = wgpu::TextureDescriptor {
-        label: Some("Depth Texture"),
-        size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    };
-    let texture = device.create_texture(&desc);
-
-    Ok(texture)
 }
 
 fn create_bind_group(
