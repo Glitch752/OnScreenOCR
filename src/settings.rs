@@ -20,6 +20,7 @@ pub struct SettingsManager {
     pub reformat_and_correct: bool,
     pub ocr_language_code: String,
     pub background_blur_enabled: bool,
+    pub add_pilcrow_in_preview: bool,
 }
 
 impl Default for SettingsManager {
@@ -44,6 +45,7 @@ impl SettingsManager {
             reformat_and_correct: true,
             ocr_language_code: DEFAULT_OCR_LANGUAGE.code.to_string(),
             background_blur_enabled: true,
+            add_pilcrow_in_preview: true,
         }
     }
 

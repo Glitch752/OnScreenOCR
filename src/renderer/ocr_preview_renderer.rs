@@ -3,7 +3,7 @@ use pixels::{wgpu, PixelsContext};
 
 use crate::{selection::{Bounds, Selection}, wgpu_text::{BrushBuilder, TextBrush}};
 
-use super::{animation::{MoveDirection, SmoothMoveFadeAnimation}, icon_renderer::{TEXT_HEIGHT, IconRenderer}, IconContext, ZIndex};
+use super::{animation::{MoveDirection, SmoothMoveFadeAnimation}, icon_renderer::{TEXT_HEIGHT, IconRenderer}, IconContext};
 
 pub(crate) struct OCRPreviewRenderer {
     anim: SmoothMoveFadeAnimation,
@@ -72,12 +72,12 @@ impl OCRPreviewRenderer {
             let max_line_length = bounds.x as f32 - margin as f32 * 2.;
             // If we have more than 3 lines and any line is very long, we should align to the left at the edge of the screen instead since it just looks better
             // Very long is subjective here -- we could come up with a real heuristic but that would require feedback from the layout engine which I do not want to do.
-            if text_lines > 3 && max_line_characters as f32 > max_line_length * TEXT_HEIGHT as f32 / 2. {
+            if text_lines > 3 && max_line_characters as f32 * TEXT_HEIGHT as f32 / 2. > max_line_length {
                 return Some(PreviewTextPlacement {
                     x: margin as f32,
                     y: y as f32,
                     horizontal_align: glyph_brush::HorizontalAlign::Left,
-                    max_line_length: window_size.0 as f32 - margin as f32 * 2.
+                    max_line_length
                 });
             }
 
@@ -113,9 +113,10 @@ impl OCRPreviewRenderer {
             return None;
         }
 
-        let text = ocr_preview_text.clone().unwrap_or_else(|| self.last_text.clone().unwrap());
-        // Add a pilcrow to the end of every line
-        let text = text.lines().map(|x| x.to_string() + "¶").collect::<Vec<String>>().join("\n");
+        let mut text = ocr_preview_text.clone().unwrap_or_else(|| self.last_text.clone().unwrap());
+        if icon_context.settings.add_pilcrow_in_preview {
+            text = text.lines().map(|x| x.to_string() + " ¶").collect::<Vec<String>>().join("\n");
+        }
 
         self.last_text = Some(text.clone());
 
@@ -134,8 +135,8 @@ impl OCRPreviewRenderer {
 
         icon_renderer.update_text_icon_positions(ocr_preview_text.map(|_| (placement.x + (if placement.horizontal_align == HorizontalAlign::Left { -24. } else { 24. }), placement.y - 18.0)));
         let section = Some(OwnedSection::default()
-            .add_text(OwnedText::new("Preview:\n").with_z(ZIndex::OCRPreviewText).with_color([1.0, 1.0, 1.0, 0.9 * self.anim.get_opacity()]).with_scale(16.0))
-            .add_text(OwnedText::new(text).with_z(ZIndex::OCRPreviewText).with_color([0.8, 0.8, 0.8, 0.8 * self.anim.get_opacity()]).with_scale(18.0))
+            .add_text(OwnedText::new("Preview:\n").with_color([1.0, 1.0, 1.0, 0.9 * self.anim.get_opacity()]).with_scale(16.0))
+            .add_text(OwnedText::new(text).with_color([0.8, 0.8, 0.8, 0.8 * self.anim.get_opacity()]).with_scale(18.0))
             .with_screen_position(self.anim.move_point((placement.x, placement.y - 18.0)))
             .with_layout(glyph_brush::Layout::default()
                 .h_align(placement.horizontal_align)

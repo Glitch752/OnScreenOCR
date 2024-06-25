@@ -14,20 +14,6 @@ mod ocr_preview_renderer;
 mod animation;
 mod background_renderer;
 
-#[allow(dead_code)]
-pub enum ZIndex {
-    Background = 3, // Not actually sent to the shader for now, just used for illustration
-    OCRPreviewText = 2,
-    Icon = 1, // Not actually sent to the shader for now, just used for illustration
-    IconText = 0
-}
-
-impl Into<f32> for ZIndex {
-    fn into(self) -> f32 {
-        // The clipping plane of orthographic the projection matrix used is -1 to 1, so we need to scale the z-index to fit in that range
-        self as i32 as f32 / 10.
-    }
-}
 #[allow(dead_code)] // Many of these fields are actually used
 pub(crate) struct Renderer {
     background_renderer: BackgroundRenderer,

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::super::{animation::MoveDirection, animation::SmoothMoveFadeAnimation, icon_renderer::*, Bounds, ZIndex};
+use super::super::{animation::MoveDirection, animation::SmoothMoveFadeAnimation, icon_renderer::*, Bounds};
 
 use glyph_brush::OwnedSection;
 use glyph_brush::OwnedText;
@@ -284,7 +284,7 @@ impl IconText {
                 screen_position: (0.0, 0.0),
                 bounds: (f32::INFINITY, f32::INFINITY),
                 layout: glyph_brush::Layout::default(),
-                text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]).with_z(ZIndex::IconText)],
+                text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0])],
             },
             visible: true,
             anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),

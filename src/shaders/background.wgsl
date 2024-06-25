@@ -5,15 +5,13 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
 }
 
-const BACKGROUND_Z: f32 = 0.3;
-
 @vertex
 fn vs_main(
     @location(0) position: vec2<f32>,
 ) -> VertexOutput {
     var out: VertexOutput;
     out.tex_coord = fma(position, vec2<f32>(0.5, -0.5), vec2<f32>(0.5, 0.5));
-    out.position = vec4<f32>(position, BACKGROUND_Z, 1.0);
+    out.position = vec4<f32>(position, 0.0, 1.0);
     return out;
 }
 
@@ -32,7 +30,7 @@ struct Locals {
 
 const BLUR_RADIUS = 2.0;
 const BLUR_ITERATIONS = 2.0;
-const OUT_OF_BOX_TINT = vec3<f32>(0.5, 0.5, 0.53);
+const OUT_OF_BOX_TINT = vec3<f32>(0.4, 0.4, 0.42);
 
 const BORDER_WIDTH = 1.0;
 const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);

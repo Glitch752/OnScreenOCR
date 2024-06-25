@@ -53,7 +53,7 @@ pub fn get_icon_layouts() -> IconLayouts {
         icon
     });
 
-    let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 2., false);
+    let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 1.5, false);
     settings_layout.add_text(IconText::new("Settings".to_string()));
     settings_layout.add_layout(horizontal_setting_layout!("Maintain newlines in text (1)", {
         let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
@@ -71,6 +71,12 @@ pub fn get_icon_layouts() -> IconLayouts {
         let mut icon = create_icon!("blur", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.background_blur_enabled }));
         icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.background_blur_enabled = !ctx.settings.background_blur_enabled; }));
+        icon
+    }));
+    settings_layout.add_layout(horizontal_setting_layout!("Add pilcrows to preview (4)", {
+        let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
+        icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.add_pilcrow_in_preview }));
+        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.add_pilcrow_in_preview = !ctx.settings.add_pilcrow_in_preview; }));
         icon
     }));
     settings_layout.add_layout({
