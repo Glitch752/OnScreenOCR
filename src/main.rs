@@ -127,6 +127,14 @@ impl App {
                 IconEvent::Copy => {
                     self.attempt_copy();
                 }
+                IconEvent::ActiveOCRLeft => {
+                    self.icon_context.as_mut().expect("Somehow icon context was None").settings.ocr_language_decrement();
+                    self.ocr_handler.update_ocr_language(self.icon_context.as_ref().unwrap().settings.ocr_language_code.clone());
+                }
+                IconEvent::ActiveOCRRight => {
+                    self.icon_context.as_mut().expect("Somehow icon context was None").settings.ocr_language_increment();
+                    self.ocr_handler.update_ocr_language(self.icon_context.as_ref().unwrap().settings.ocr_language_code.clone());
+                }
             }
         }
     }

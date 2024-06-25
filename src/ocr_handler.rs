@@ -10,15 +10,18 @@ const DEBOUNE_TIME: Duration = Duration::from_millis(50);
 
 static CURRENT_SCREENSOT: LazyLock<Mutex<Box<Option<Screenshot>>>> = LazyLock::new(|| Mutex::new(Box::new(None)));
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) enum OCREvent {
     SelectionChanged(Bounds),
+    LanguageUpdated(String)
 }
 
 impl PartialEq for OCREvent {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (OCREvent::SelectionChanged(_), OCREvent::SelectionChanged(_)) => true,
+            (OCREvent::LanguageUpdated(_), OCREvent::LanguageUpdated(_)) => true,
+            _ => false
         }
     }
 }
@@ -90,6 +93,9 @@ impl OCRHandler {
                 OCREvent::SelectionChanged(bounds) => {
                     perform_ocr(bounds, &mut init_data.leptess, &init_data.tx);
                 }
+                OCREvent::LanguageUpdated(language_code) => {
+                    init_data.leptess = leptess::LepTess::new(Some("./tessdata"), &language_code).expect("Unable to create Tesseract instance");
+                }
             },
             || {
                 InitData {
@@ -98,6 +104,12 @@ impl OCRHandler {
                 }
             },
         ));
+    }
+
+    pub fn update_ocr_language(&mut self, language_code: String) {
+        if let Some(debouncer) = &mut self.debouncer {
+            debouncer.put(OCREvent::LanguageUpdated(language_code));
+        }
     }
 }
 

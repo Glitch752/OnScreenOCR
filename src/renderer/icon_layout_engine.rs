@@ -124,13 +124,20 @@ impl IconLayouts {
             sub_layout.initialize();
         }
     }
+
+    pub fn update_all(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) {
+        for (_, sub_layout) in self.layouts.iter_mut() {
+            sub_layout.update_all(mouse_pos, delta, icon_context);
+        }
+    }
 }
 
 pub(crate) struct PositionedLayout {
     center_position: ScreenRelativePosition,
     calculated_center_position: (f32, f32),
     last_center_position: Option<(f32, f32)>,
-    layout: LayoutChild
+    layout: LayoutChild,
+    last_screen_size: (f32, f32)
 }
 
 impl PositionedLayout {
@@ -139,7 +146,8 @@ impl PositionedLayout {
             center_position,
             calculated_center_position: (0.0, 0.0),
             last_center_position: None,
-            layout
+            layout,
+            last_screen_size: (0.0, 0.0)
         }
     }
 
@@ -176,6 +184,8 @@ impl PositionedLayout {
     }
 
     pub fn recalculate_positions(&mut self, screen_size: (f32, f32)) -> () {
+        self.last_screen_size = screen_size;
+
         self.calculated_center_position = self.center_position.get_position(screen_size);
         if Some(self.calculated_center_position) == self.last_center_position {
             return;
@@ -216,6 +226,16 @@ impl PositionedLayout {
             LayoutChild::Layout(layout) => layout.set_visible(visible)
         }
     }
+
+    pub fn update_all(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) {
+        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, delta, icon_context));
+        
+        let mut any_text_changed = false;
+        self.text_mut().into_iter().for_each(|text| { any_text_changed = text.update(delta) || any_text_changed; });
+        if any_text_changed {
+            self.recalculate_positions(self.last_screen_size);
+        }
+    }
 }
 
 #[allow(unused)]
@@ -248,7 +268,9 @@ pub(crate) struct IconText {
     bounds: Bounds,
     text_section: OwnedSection,
     visible: bool,
-    anim: SmoothMoveFadeAnimation
+    anim: SmoothMoveFadeAnimation,
+
+    pub get_text: Option<Box<dyn Fn(&IconContext) -> String>>
 }
 
 impl IconText {
@@ -264,7 +286,8 @@ impl IconText {
                 text: vec![OwnedText::new(string).with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0])],
             },
             visible: true,
-            anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0)
+            anim: SmoothMoveFadeAnimation::new(true, MoveDirection::Up, 10.0),
+            get_text: None
         }
     }
 
@@ -272,9 +295,19 @@ impl IconText {
         self.text_section.screen_position = self.anim.move_point((self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32));
     }
 
-    pub fn update(&mut self, delta: std::time::Duration) {
+    pub fn update(&mut self, delta: std::time::Duration) -> bool {
         self.anim.update(delta, self.visible);
         self.update_section_position();
+
+        if let Some(get_text) = &self.get_text {
+            let current_string = self.text_section.text[0].text.clone();
+            let new_string = get_text();
+            if current_string != new_string {
+                self.text_section.text[0].text = new_string;
+                return true;
+            }
+        }
+        false
     }
 }
 

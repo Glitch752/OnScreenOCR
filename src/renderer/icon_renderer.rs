@@ -8,7 +8,9 @@ use super::{animation::SmoothMoveFadeAnimation, icon_layout_engine::{create_icon
 
 pub enum IconEvent {
     Copy,
-    Close
+    Close,
+    ActiveOCRLeft,
+    ActiveOCRRight
 }
 
 pub struct IconContext {
@@ -173,10 +175,29 @@ impl IconRenderer {
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.background_blur_enabled = !ctx.settings.background_blur_enabled; }));
             icon
         }));
+        settings_layout.add_layout({
+            let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
+            layout.add_icon({
+                let mut icon = create_icon!("left", IconBehavior::Click);
+                icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::ActiveOCRLeft).expect("Unable to send active OCR left event"); }));
+                icon
+            });
+            layout.add_text({
+                let text = IconText::new("Current OCR: English".to_string());
+                text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Current OCR: {}", ctx.settings.ocr_language_code) }));
+                text
+            });
+            layout.add_icon({
+                let mut icon = create_icon!("right", IconBehavior::Click);
+                icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::ActiveOCRRight).expect("Unable to send active OCR right event"); }));
+                icon
+            });
+            layout
+        });
 
         let mut icon_layouts = IconLayouts::new();
         icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 4. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
+        icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 5. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
         icon_layouts.add_layout(
             String::from("copy"),
             ScreenRelativePosition::new(ScreenLocation::TopLeft, (0., 0.)), // Updated live
@@ -486,7 +507,9 @@ impl IconRenderer {
     }
 
     pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
-        self.icons_mut().iter_mut().any(|icon| icon.mouse_event(mouse_pos, state, icon_context))
+        let mut found = false;
+        self.icons_mut().iter_mut().for_each(|icon| found = icon.mouse_event(mouse_pos, state, icon_context) || found);
+        found
     }
 
     pub fn update(
@@ -498,8 +521,7 @@ impl IconRenderer {
     ) {
         self.icons.recalculate_positions(self.current_screen_size);
 
-        self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, delta, icon_context));
-        self.text_mut().into_iter().for_each(|text| text.update(delta));
+        self.icons.update_all(mouse_pos, delta, icon_context);
 
         self.update_icon_state_buffer(queue);
         self.update_icon_position_buffer(queue);
@@ -570,13 +592,12 @@ impl Icon {
                     if self.behavior == IconBehavior::Click {
                         self.pressed = state == ElementState::Pressed;
                     }
-                    true
                 }
                 IconBehavior::Visual => {
-                    // Doesn't matter
-                    false
+                    // Doesn't matter, although we still return true because we don't want to be able to click through visual icons
                 }
-            }
+            };
+            true
         } else {
             false
         }
