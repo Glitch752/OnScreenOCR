@@ -447,7 +447,17 @@ impl Layout {
                     }
                 }
                 LayoutChild::Layout(layout) => {
-                    layout.calculated_position = (top_left_position.0 + layout.calculated_size.0 / 2., top_left_position.1 + layout.calculated_size.1 / 2.);
+                    match self.cross_justify {
+                        CrossJustify::Start => {
+                            layout.calculated_position = (top_left_position.0 + layout.calculated_size.0 / 2., top_left_position.1 + layout.calculated_size.1 / 2.);
+                        }
+                        CrossJustify::Center => {
+                            layout.calculated_position = (top_left_position.0 + self.calculated_size.0 / 2., top_left_position.1 + layout.calculated_size.1 / 2.);
+                        }
+                        CrossJustify::End => {
+                            layout.calculated_position = (top_left_position.0 + self.calculated_size.0 - layout.calculated_size.0 / 2., top_left_position.1 + layout.calculated_size.1 / 2.);
+                        }
+                    }
                     layout.calculate_child_positions();
                     match self.direction {
                         Direction::Horizontal => {
