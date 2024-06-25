@@ -119,7 +119,7 @@ impl Bounds {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Selection {
     pub bounds: Bounds,
 
@@ -130,10 +130,24 @@ pub(crate) struct Selection {
     pub ctrl_held: bool,
 }
 
+impl Default for Selection {
+    fn default() -> Self {
+        Self {
+            // Override the default bounds so it doesn't appear in the corner of the screen
+            bounds: Bounds::new(-10, -10, 0, 0),
+            mouse_down: false,
+            shift_held: false,
+            start_drag_location: (0, 0),
+            start_drag_bounds_origin: (0, 0),
+            ctrl_held: false,
+        }
+    }
+}
+
 impl Selection {
     pub fn reset(&mut self) {
-        self.bounds.x = 0;
-        self.bounds.y = 0;
+        self.bounds.x = -10;
+        self.bounds.y = -10;
         self.bounds.width = 0;
         self.bounds.height = 0;
         self.mouse_down = false;

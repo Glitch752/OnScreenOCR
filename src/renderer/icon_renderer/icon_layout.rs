@@ -6,6 +6,7 @@ use super::IconContext;
 
 pub enum IconEvent {
     Copy,
+    Screenshot,
     Close,
     ActiveOCRLeft,
     ActiveOCRRight
@@ -39,6 +40,15 @@ pub fn get_icon_layouts() -> IconLayouts {
         icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Copy).expect("Unable to send copy event"); }));
         icon.get_active = Some(Box::new(|ctx| { ctx.copy_key_held }));
         icon.tooltip_text = Some("Copy (C)".to_string());
+        icon.get_disabled = Some(Box::new(|ctx| { !ctx.has_selection }));
+        icon
+    });
+    menubar_layout.add_icon({
+        let mut icon = create_icon!("screenshot", IconBehavior::Click);
+        icon.click_callback = Some(Box::new(|ctx| { ctx.channel.send(IconEvent::Screenshot).expect("Unable to send screenshot event"); }));
+        icon.get_active = Some(Box::new(|ctx| { ctx.screenshot_key_held }));
+        icon.tooltip_text = Some("Screenshot selected (S)".to_string());
+        icon.get_disabled = Some(Box::new(|ctx| { !ctx.has_selection }));
         icon
     });
     menubar_layout.add_icon({
@@ -71,6 +81,8 @@ pub fn get_icon_layouts() -> IconLayouts {
     horizontal_setting_layout!("Reformat and correct text (2)", "fix-text", reformat_and_correct);
     horizontal_setting_layout!("Background blur enabled (3)", "blur", background_blur_enabled);
     horizontal_setting_layout!("Add pilcrows to preview (4)", "return", add_pilcrow_in_preview);
+    horizontal_setting_layout!("Close on copy (5)", "auto-close", close_on_copy);
+    horizontal_setting_layout!("Auto copy when selecting (6)", "auto-copy", auto_copy);
 
     settings_layout.add_layout({
         let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
@@ -105,7 +117,7 @@ pub fn get_icon_layouts() -> IconLayouts {
         }
     );
     icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-    icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 5. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
+    icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 7. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
 
     icon_layouts.initialize();
 

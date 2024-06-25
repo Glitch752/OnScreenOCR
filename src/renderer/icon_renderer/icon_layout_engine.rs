@@ -12,7 +12,9 @@ pub const TEXT_HEIGHT: f32 = 20.0;
 static ATLAS_POSITIONS: &str = include_str!("../../icons/atlas_positions.txt");
 
 pub fn get_icon_atlas_pos(id: &str) -> (u32, u32) {
-    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).unwrap().split_whitespace().skip(1).collect::<Vec<&str>>();
+    let pos = ATLAS_POSITIONS.lines().find(|line| line.starts_with(id)).expect(
+        &format!("Unable to find icon {} in atlas", id)
+    ).split_whitespace().skip(1).collect::<Vec<&str>>();
     (pos[0].parse().unwrap(), pos[1].parse().unwrap())
 }
 
@@ -26,11 +28,13 @@ macro_rules! create_icon {
                 hovered: false,
                 pressed: false,
                 active: false,
+                disabled: false,
 
                 bounds: Bounds::new(0, 0, ICON_SIZE, ICON_SIZE),
                 behavior: $behavior,
                 click_callback: None,
                 get_active: None,
+                get_disabled: None,
 
                 tooltip_text: None,
 
@@ -56,11 +60,13 @@ macro_rules! create_background {
                 hovered: false,
                 pressed: false,
                 active: false,
+                disabled: false,
 
                 bounds: Bounds::from_center($bounds.0, $bounds.1, ICON_SIZE + ICON_MARGIN, ICON_SIZE + ICON_MARGIN),
                 behavior: IconBehavior::Visual,
                 click_callback: None,
                 get_active: None,
+                get_disabled: None,
 
                 tooltip_text: None,
 

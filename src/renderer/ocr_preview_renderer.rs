@@ -174,8 +174,6 @@ impl OCRPreviewRenderer {
         self.should_render_text = ocr_section.is_some();
         if ocr_section.is_some() {
             self.text_brush.queue(device, queue, vec![ocr_section.as_ref().unwrap()]).unwrap();
-        } else {
-            self.text_brush.queue(device, queue, Vec::<&OwnedSection>::new()).unwrap();
         }
     }
 

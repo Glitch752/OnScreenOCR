@@ -21,6 +21,8 @@ pub struct SettingsManager {
     pub ocr_language_code: String,
     pub background_blur_enabled: bool,
     pub add_pilcrow_in_preview: bool,
+    pub close_on_copy: bool,
+    pub auto_copy: bool,
 }
 
 impl Default for SettingsManager {
@@ -46,6 +48,8 @@ impl SettingsManager {
             ocr_language_code: DEFAULT_OCR_LANGUAGE.code.to_string(),
             background_blur_enabled: true,
             add_pilcrow_in_preview: true,
+            close_on_copy: false,
+            auto_copy: false,
         }
     }
 

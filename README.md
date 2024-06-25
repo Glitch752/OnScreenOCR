@@ -6,10 +6,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Live preview of the OCR result
 
 ## TODO
-- [ ] Ability to capture screenshots (since we effectively do that anyway)
-- [ ] Change cursor to crosshair when selecting region
-- [ ] Test and add support for MacOS and Linux
-- [ ] Tooltips when hovering over buttons
+- [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
 - [ ] Allow for configuring other tesseract options (e.g. blacklisted characters, etc.)

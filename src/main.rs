@@ -1,11 +1,15 @@
 #![feature(duration_millis_float)]
+#![feature(fs_try_exists)]
 
 use clipboard::{ClipboardContext, ClipboardProvider};
+use clipboard_image::copy_image_to_clipboard;
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::OCRHandler;
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::screenshot_from_handle;
 use selection::Selection;
+use std::fs::File;
+use std::io::BufReader;
 use std::sync::mpsc;
 use std::thread;
 use winit::application::ApplicationHandler;
@@ -13,7 +17,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
-use winit::window::{Fullscreen, Window, WindowId, WindowLevel};
+use winit::window::{Cursor, CursorIcon, Fullscreen, Window, WindowId, WindowLevel};
 use renderer::{IconContext, IconEvent};
 
 mod ocr_handler;
@@ -22,6 +26,7 @@ mod screenshot;
 mod selection;
 mod wgpu_text;
 mod settings;
+mod clipboard_image;
 
 fn main() {
     // Only run event loop on user interaction
@@ -52,7 +57,6 @@ struct WindowState {
     shader_renderer: renderer::Renderer,
 }
 
-#[derive(Default)]
 struct App {
     window_state: Option<WindowState>,
     size: (u32, u32),
@@ -60,24 +64,55 @@ struct App {
     ocr_handler: OCRHandler,
     relative_mouse_pos: (i32, i32),
 
-    icon_context: Option<IconContext>,
-    icon_event_receiver: Option<mpsc::Receiver<IconEvent>>,
+    icon_context: IconContext,
+    icon_event_receiver: mpsc::Receiver<IconEvent>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        let (tx, rx) = mpsc::channel();
+        let icon_context = IconContext::new(tx);
+        let icon_event_receiver = rx;
+
+        App {
+            window_state: None,
+            size: (0, 0),
+            selection: Selection::default(),
+            ocr_handler: OCRHandler::new(),
+            relative_mouse_pos: (0, 0),
+            
+            icon_context,
+            icon_event_receiver,
+        }
+    }
+
 }
 
 impl App {
-    fn redraw(&mut self) {
-        if self.icon_context.is_none() {
-            self.create_icon_context();
-        }
+    fn set_mouse_cursor(&self) {
+        let window = &self.window_state.as_ref().unwrap().window;
+        let cursor = match (self.selection.shift_held, self.selection.mouse_down) {
+            (true, true) => CursorIcon::Grabbing,
+            (true, false) => CursorIcon::Grab,
+            (false, true) => CursorIcon::Crosshair,
+            (false, false) => CursorIcon::Default,
+        };
+        window.set_cursor(Cursor::from(cursor));
+    }
 
+    fn redraw(&mut self) {
         self.process_icon_events();
+
+        self.set_mouse_cursor();
 
         let state = self.window_state.as_mut().unwrap();
 
         let pixels = &state.pixels;
         let shader_renderer = &mut state.shader_renderer;
 
-        self.ocr_handler.update_ocr_preview_text();
+        let ocr_text_changed = self.ocr_handler.update_ocr_preview_text();
+
+        self.icon_context.has_selection = self.selection.bounds.width != 0 && self.selection.bounds.height != 0;
 
         let render_result = pixels.render_with(|encoder, render_target, context| {
             shader_renderer.update(
@@ -86,7 +121,7 @@ impl App {
                 self.selection,
                 self.ocr_handler.ocr_preview_text.clone(),
                 self.relative_mouse_pos,
-                self.icon_context.as_ref().unwrap()
+                &mut self.icon_context
             );
             shader_renderer.render(
                 encoder,
@@ -97,22 +132,19 @@ impl App {
             Ok(())
         });
 
+        if ocr_text_changed {
+            if self.icon_context.settings.auto_copy {
+                self.attempt_copy();
+            }
+        }
+
         if render_result.is_err() {
             println!("Error rendering: {:?}", render_result);
         }
     }
 
-    fn create_icon_context(&mut self) {
-        let (tx, rx) = mpsc::channel();
-        self.icon_context = Some(IconContext::new(tx));
-        self.icon_event_receiver = Some(rx);
-    }
-
     fn process_icon_events(&mut self) {
-        if self.icon_event_receiver.is_none() {
-            return;
-        }
-        let rx = self.icon_event_receiver.as_ref().unwrap();
+        let rx = &self.icon_event_receiver;
 
         let mut events = Vec::new();
         while let Ok(event) = rx.try_recv() {
@@ -127,13 +159,16 @@ impl App {
                 IconEvent::Copy => {
                     self.attempt_copy();
                 }
+                IconEvent::Screenshot => {
+                    self.attempt_screenshot();
+                }
                 IconEvent::ActiveOCRLeft => {
-                    self.icon_context.as_mut().expect("Somehow icon context was None").settings.ocr_language_decrement();
-                    self.ocr_handler.update_ocr_language(self.icon_context.as_ref().unwrap().settings.ocr_language_code.clone());
+                    self.icon_context.settings.ocr_language_decrement();
+                    self.ocr_handler.update_ocr_language(self.icon_context.settings.ocr_language_code.clone());
                 }
                 IconEvent::ActiveOCRRight => {
-                    self.icon_context.as_mut().expect("Somehow icon context was None").settings.ocr_language_increment();
-                    self.ocr_handler.update_ocr_language(self.icon_context.as_ref().unwrap().settings.ocr_language_code.clone());
+                    self.icon_context.settings.ocr_language_increment();
+                    self.ocr_handler.update_ocr_language(self.icon_context.settings.ocr_language_code.clone());
                 }
             }
         }
@@ -147,13 +182,46 @@ impl App {
         // Copy the OCR text to the clipboard
         let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
         ctx.set_contents(self.ocr_handler.ocr_preview_text.clone().unwrap()).expect("Unable to set clipboard contents");
+        
+        if self.icon_context.settings.close_on_copy {
+            self.hide_window();
+        }
+    }
+
+    fn attempt_screenshot(&mut self) {
+        if self.selection.bounds.width == 0 || self.selection.bounds.height == 0 {
+            return;
+        }
+        if !std::fs::try_exists("cropped.png").unwrap_or(false) {
+            return;
+        }
+
+        let file = File::open("cropped.png");
+        if file.is_err() {
+            eprintln!("Error opening file: {:?}", file);
+            return;
+        }
+        let png_reader = BufReader::new(file.unwrap());
+        let img = image::load(png_reader, image::ImageFormat::Png);
+        if img.is_err() {
+            eprintln!("Error loading image: {:?}", img);
+            return;
+        }
+        copy_image_to_clipboard(&img.unwrap());
+        
+        if self.icon_context.settings.close_on_copy {
+            self.hide_window();
+        }
     }
 
     fn hide_window(&mut self) {
         self.window_state.as_ref().unwrap().window.set_visible(false);
-        if let Some(icon_context) = self.icon_context.as_ref() {
-            icon_context.settings.save();
-        }
+        self.icon_context.settings.save();
+    }
+
+    fn fix_keys_held(&mut self) {
+        self.selection.shift_held = inputbot::KeybdKey::LShiftKey.is_pressed();
+        self.selection.ctrl_held = inputbot::KeybdKey::LControlKey.is_pressed();
     }
 }
 
@@ -272,13 +340,15 @@ impl ApplicationHandler for App {
             }
 
             self.selection.reset();
-            if let Some(ctx) = &mut self.icon_context { ctx.reset(); }
+            self.icon_context.reset();
 
             let window_state = self.window_state.as_mut().unwrap();
             let window = &window_state.window;
             window.set_visible(true);
             window.focus_window();
             self.redraw();
+
+            self.fix_keys_held();
         }
     }
 
@@ -339,12 +409,15 @@ impl ApplicationHandler for App {
                             event.state == winit::event::ElementState::Pressed;
                     }
                     Key::Character("c") => {
-                        if self.icon_context.is_none() {
-                            self.create_icon_context();
-                        }
-                        self.icon_context.as_mut().unwrap().copy_key_held = event.state == winit::event::ElementState::Pressed;
+                        self.icon_context.copy_key_held = event.state == winit::event::ElementState::Pressed;
                         if event.state == winit::event::ElementState::Pressed {
                             self.attempt_copy();
+                        }
+                    }
+                    Key::Character("s") => {
+                        self.icon_context.screenshot_key_held = event.state == winit::event::ElementState::Pressed;
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.attempt_screenshot();
                         }
                     }
                     Key::Named(NamedKey::ArrowDown) => {
@@ -379,15 +452,14 @@ impl ApplicationHandler for App {
                     // Toggle settings
                     Key::Character("1") | Key::Character("2") | Key::Character("3") | Key::Character("4") => {
                         if event.state == winit::event::ElementState::Pressed && !event.repeat {
-                            if self.icon_context.is_none() {
-                                self.create_icon_context();
-                            }
-                            let settings = &mut self.icon_context.as_mut().unwrap().settings;
+                            let settings = &mut self.icon_context.settings;
                             match event.logical_key.as_ref() {
                                 Key::Character("1") => settings.maintain_newline = !settings.maintain_newline,
                                 Key::Character("2") => settings.reformat_and_correct = !settings.reformat_and_correct,
                                 Key::Character("3") => settings.background_blur_enabled = !settings.background_blur_enabled,
                                 Key::Character("4") => settings.add_pilcrow_in_preview = !settings.add_pilcrow_in_preview,
+                                Key::Character("5") => settings.close_on_copy = !settings.close_on_copy,
+                                Key::Character("6") => settings.auto_copy = !settings.auto_copy,
                                 _ => (),
                             }
                         }
@@ -412,10 +484,8 @@ impl ApplicationHandler for App {
                         (pos.0 - window_pos.x, pos.1 - window_pos.y)
                     };
 
-                    if self.icon_context.is_none() {
-                        self.create_icon_context();
-                    }
-                    let was_handled = self.window_state.as_mut().unwrap().shader_renderer.mouse_event((x, y), state, self.icon_context.as_mut().unwrap());
+                    let window_state = self.window_state.as_mut().unwrap();
+                    let was_handled = window_state.shader_renderer.mouse_event((x, y), state, &mut self.icon_context);
 
                     if !was_handled {
                         if state == winit::event::ElementState::Pressed {
@@ -434,9 +504,7 @@ impl ApplicationHandler for App {
                             self.selection.mouse_down = false;
                         }
 
-                        if let Some(ctx) = &mut self.icon_context {
-                            ctx.settings_panel_visible = false;
-                        }
+                        self.icon_context.settings_panel_visible = false;
                     }
 
                     self.window_state.as_ref().unwrap().window.request_redraw();

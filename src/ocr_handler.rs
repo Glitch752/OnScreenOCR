@@ -32,25 +32,23 @@ pub(crate) struct OCRHandler {
     pub last_selection_bounds: Option<Bounds>, // Used to recalculate the same OCR when language changes
 }
 
-impl Default for OCRHandler {
-    fn default() -> Self {
-        let (tx, rx) = mpsc::channel::<String>();
-        OCRHandler {
-            throttler: None,
-            ocr_result_sender: tx,
-            ocr_result_receiver: rx,
-            ocr_preview_text: None,
-            last_selection_bounds: None,
-        }
-    }
-}
-
 struct InitData {
     tx: mpsc::Sender<String>,
     leptess: leptess::LepTess,
 }
 
 impl OCRHandler {
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel::<String>();
+        OCRHandler {
+            throttler: None,
+            ocr_result_sender: tx,
+            ocr_result_receiver: rx,
+            ocr_preview_text: None,
+            last_selection_bounds: None
+        }
+    }
+
     pub fn set_screenshot(&mut self, screenshot: Screenshot) {
         let mut current_screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot");
         *current_screenshot = Box::new(Some(screenshot));
@@ -72,14 +70,17 @@ impl OCRHandler {
         self.last_selection_bounds = Some(latest_selection.bounds);
     }
 
-    pub fn update_ocr_preview_text(&mut self) {
+    pub fn update_ocr_preview_text(&mut self) -> bool {
         if let Some(text) = self.get_ocr_result() {
             if text.is_empty() {
                 self.ocr_preview_text = None;
+                return false
             } else {
-                self.ocr_preview_text = Some(text);
+                self.ocr_preview_text = Some(text.clone());
+                return true
             }
         }
+        false
     }
 
     fn get_ocr_result(&mut self) -> Option<String> {

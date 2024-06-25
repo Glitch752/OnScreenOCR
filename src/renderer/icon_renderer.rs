@@ -19,6 +19,8 @@ pub struct IconContext {
     pub settings: SettingsManager,
     pub settings_panel_visible: bool,
     pub copy_key_held: bool,
+    pub screenshot_key_held: bool,
+    pub has_selection: bool,
 
     pub(crate) channel: mpsc::Sender<IconEvent>
 }
@@ -29,6 +31,8 @@ impl IconContext {
             settings: SettingsManager::new(),
             settings_panel_visible: false,
             copy_key_held: false,
+            has_selection: false,
+            screenshot_key_held: false,
             channel
         }
     }
@@ -49,6 +53,7 @@ pub(crate) struct Icon {
     pub hovered: bool,
     pub pressed: bool,
     pub active: bool,
+    pub disabled: bool,
 
     pub bounds: Bounds,
 
@@ -58,6 +63,7 @@ pub(crate) struct Icon {
     pub behavior: IconBehavior,
     pub click_callback: Option<Box<dyn Fn(&mut IconContext) -> ()>>,
     pub get_active: Option<Box<dyn Fn(&IconContext) -> bool>>,
+    pub get_disabled: Option<Box<dyn Fn(&IconContext) -> bool>>,
 
     pub tooltip_text: Option<String>,
 
@@ -71,16 +77,18 @@ pub(crate) struct TooltipState {
     pub(crate) start_time: std::time::Instant,
     pub(crate) position: (f32, f32),
     pub(crate) text: String,
-    pub(crate) hidden: bool
+    pub(crate) hidden: bool,
+    pub(crate) disabled_icon: bool
 }
 
 impl TooltipState {
-    pub fn new(bounds: Bounds, text: String) -> Self {
+    pub fn new(bounds: Bounds, text: String, disabled_icon: bool) -> Self {
         Self {
             start_time: std::time::Instant::now(),
             position: (bounds.x as f32 + bounds.width as f32 / 2., bounds.y as f32 + bounds.height as f32 + 10.),
             text,
-            hidden: false
+            hidden: false,
+            disabled_icon
         }
     }
 
@@ -99,7 +107,8 @@ impl Default for TooltipState {
             start_time: std::time::Instant::now(),
             position: (0., 0.),
             text: String::new(),
-            hidden: true
+            hidden: true,
+            disabled_icon: false
         }
     }
 }
@@ -501,7 +510,7 @@ impl IconRenderer {
         if self.icon_tooltip_anim.visible_at_all() {
             self.icon_tooltip_section.screen_position = self.icon_tooltip_anim.move_point(self.icon_tooltip_state.position);
             self.icon_tooltip_section.text[0].text = self.icon_tooltip_state.text.clone();
-            self.icon_tooltip_section.text[0].extra.color = [1.0, 1.0, 1.0, self.icon_tooltip_anim.get_opacity()];
+            self.icon_tooltip_section.text[0].extra.color = [1.0, 1.0, 1.0, self.icon_tooltip_anim.get_opacity() * if self.icon_tooltip_state.disabled_icon { 0.5 } else { 1.0 }];
             sections.push(&self.icon_tooltip_section);
         }
         self.should_render_text = sections.len() > 0;
@@ -555,7 +564,7 @@ impl IconRenderer {
             vec![
                 active_icon_pos.0 as f32 / self.icon_atlas_width as f32,
                 active_icon_pos.1 as f32 / self.icon_atlas_height as f32,
-                icon.anim.get_opacity()
+                icon.anim.get_opacity() * if icon.disabled { 0.5 } else { 1.0 }
             ]
         }).collect();
 
@@ -564,6 +573,8 @@ impl IconRenderer {
 
     pub fn resize_view(&mut self, width: f32, height: f32, queue: &wgpu::Queue) {
         self.update_matrix(crate::wgpu_text::ortho(width, height), queue);
+        self.text_brush.resize_view(width as f32, height as f32, queue);
+        
         self.current_screen_size = (width, height);
     }
 
@@ -602,19 +613,24 @@ impl Icon {
     }
 
     pub fn update(&mut self, mouse_pos: (i32, i32), delta: std::time::Duration, icon_context: &IconContext) -> Option<TooltipState> {
-        // Update hover
-        self.hovered = self.bounds.contains(mouse_pos);
-        self.active = self.get_active.as_ref().map_or(false, |get_active| get_active(icon_context)) || self.pressed;
-
-        self.anim.update(delta, self.visible);
+        if let Some(get_disabled) = self.get_disabled.as_ref() {
+            self.disabled = get_disabled(icon_context);
+        }
 
         // If not hovered and a click button, unselect
         if !self.hovered && self.pressed && matches!(self.behavior, IconBehavior::Click) {
             self.pressed = false;
         }
 
-        if self.hovered && self.tooltip_text.is_some() {
-            Some(TooltipState::new(self.bounds, self.tooltip_text.clone().unwrap()))
+        // Update hover
+        let mouse_over = self.bounds.contains(mouse_pos);
+        self.hovered = mouse_over && !self.disabled;
+        self.active = self.get_active.as_ref().map_or(false, |get_active| get_active(icon_context)) || self.pressed;
+
+        self.anim.update(delta, self.visible);
+
+        if mouse_over && self.tooltip_text.is_some() {
+            Some(TooltipState::new(self.bounds, self.tooltip_text.clone().unwrap(), self.disabled))
         } else {
             None
         }
