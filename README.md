@@ -13,6 +13,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Tooltips when hovering over buttons
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
+- [ ] Make settings close when creating selection
 - [ ] Allow for configuring other tesseract options (e.g. blacklisted characters, etc.)
   - [ ] Allow exporting with tesseract's TSV mode (and maybe some others)
 

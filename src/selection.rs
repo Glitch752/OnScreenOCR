@@ -59,6 +59,11 @@ impl Bounds {
         self.y = y.lossy_into();
     }
 
+    pub fn set_size<W: BoundsNumber, H: BoundsNumber>(&mut self, width: W, height: H) {
+        self.width = width.lossy_into();
+        self.height = height.lossy_into();
+    }
+
     pub fn to_positive_size(&self) -> Bounds {
         let (mut x, mut y, mut width, mut height) = (self.x, self.y, self.width, self.height);
         if width < 0 {

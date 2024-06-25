@@ -183,8 +183,8 @@ impl IconRenderer {
                 icon
             });
             layout.add_text({
-                let text = IconText::new("Current OCR: English".to_string());
-                text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Current OCR: {}", ctx.settings.ocr_language_code) }));
+                let mut text = IconText::new("_______________________________________________________".to_string()); // Plenty of characters to make the text allocate enough background tiles
+                text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Current OCR: {}", ctx.settings.get_ocr_language_data().name) }));
                 text
             });
             layout.add_icon({
@@ -425,7 +425,7 @@ impl IconRenderer {
                         alpha: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::One,
                             dst_factor: wgpu::BlendFactor::One,
-                            operation: wgpu::BlendOperation::Min,
+                            operation: wgpu::BlendOperation::Max,
                         }
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
@@ -487,10 +487,6 @@ impl IconRenderer {
     }
     pub fn icons_mut(&mut self) -> Vec<&mut Icon> {
         self.icons.icons_mut()
-    }
-
-    pub fn text_mut(&mut self) -> Vec<&mut IconText> {
-        self.icons.text_mut()
     }
 
     pub fn render<'pass>(&'pass self, rpass: &mut wgpu::RenderPass<'pass>) {
@@ -583,14 +579,19 @@ impl Icon {
     pub fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
         if self.bounds.contains(mouse_pos) && self.visible {
             match self.behavior {
-                IconBehavior::Click | IconBehavior::SettingToggle => {
+                IconBehavior::Click => {
+                    if let Some(callback) = &self.click_callback {
+                        if state == ElementState::Released {
+                            callback(icon_context);
+                        }
+                    }
+                    self.pressed = state == ElementState::Pressed;
+                }
+                IconBehavior::SettingToggle => {
                     if let Some(callback) = &self.click_callback {
                         if state == ElementState::Pressed {
                             callback(icon_context);
                         }
-                    }
-                    if self.behavior == IconBehavior::Click {
-                        self.pressed = state == ElementState::Pressed;
                     }
                 }
                 IconBehavior::Visual => {

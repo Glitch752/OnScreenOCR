@@ -10,8 +10,8 @@ static SETTINGS_PATH: &str = "settings.bin";
     
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OCRLanguage {
-    code: &'static str,
-    name: &'static str,
+    pub code: &'static str,
+    pub name: &'static str,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,6 +54,10 @@ impl SettingsManager {
 
     pub fn get_ocr_languages(&self) -> Vec<OCRLanguage> {
         OCR_LANGUAGES.to_vec()
+    }
+
+    pub fn get_ocr_language_data(&self) -> OCRLanguage {
+        OCR_LANGUAGES.iter().find(|x| x.code == self.ocr_language_code).unwrap().clone()
     }
 
     pub fn ocr_language_increment(&mut self) {

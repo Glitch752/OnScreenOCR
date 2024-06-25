@@ -105,17 +105,13 @@ impl IconLayouts {
         self.layouts.iter_mut().flat_map(|(_, sub_layout)| sub_layout.icons_mut()).collect()
     }
 
-    pub fn text_mut(&mut self) -> Vec<&mut IconText> {
-        self.layouts.iter_mut().flat_map(|(_, sub_layout)| sub_layout.text_mut()).collect()
-    }
-
     pub fn text_sections(&self) -> Vec<&OwnedSection> {
         self.layouts.iter().flat_map(|(_, sub_layout)| sub_layout.text_sections()).collect()
     }
 
     pub fn recalculate_positions(&mut self, screen_size: (f32, f32)) -> () {
         for (_, sub_layout) in self.layouts.iter_mut() {
-            sub_layout.recalculate_positions(screen_size);
+            sub_layout.recalculate_positions(screen_size, false);
         }
     }
 
@@ -183,12 +179,14 @@ impl PositionedLayout {
         }
     }
 
-    pub fn recalculate_positions(&mut self, screen_size: (f32, f32)) -> () {
+    pub fn recalculate_positions(&mut self, screen_size: (f32, f32), force: bool) -> () {
         self.last_screen_size = screen_size;
 
         self.calculated_center_position = self.center_position.get_position(screen_size);
-        if Some(self.calculated_center_position) == self.last_center_position {
-            return;
+        if !force {
+            if Some(self.calculated_center_position) == self.last_center_position {
+                return;
+            }
         }
         self.last_center_position = Some(self.calculated_center_position);
 
@@ -231,9 +229,9 @@ impl PositionedLayout {
         self.icons_mut().into_iter().for_each(|icon| icon.update(mouse_pos, delta, icon_context));
         
         let mut any_text_changed = false;
-        self.text_mut().into_iter().for_each(|text| { any_text_changed = text.update(delta) || any_text_changed; });
+        self.text_mut().into_iter().for_each(|text| { any_text_changed = text.update(delta, icon_context) || any_text_changed; });
         if any_text_changed {
-            self.recalculate_positions(self.last_screen_size);
+            self.recalculate_positions(self.last_screen_size, true);
         }
     }
 }
@@ -273,10 +271,15 @@ pub(crate) struct IconText {
     pub get_text: Option<Box<dyn Fn(&IconContext) -> String>>
 }
 
+fn approximate_text_size(string: &String) -> (f32, f32) {
+    // 0.46 is an estimate; is text uses very long characters, we may be too short.
+    (string.len() as f32 * TEXT_HEIGHT * 0.46 + ICON_MARGIN, TEXT_HEIGHT)
+}
+
 impl IconText {
     pub fn new(string: String) -> Self {
-        // Approximate text size
-        let bounds = Bounds::new(0, 0, string.len() as f32 * TEXT_HEIGHT * 0.5 + ICON_MARGIN, TEXT_HEIGHT as i32);
+        let size = approximate_text_size(&string);
+        let bounds = Bounds::new(0, 0, size.0, size.1);
         IconText {
             bounds,
             text_section: OwnedSection {
@@ -295,15 +298,17 @@ impl IconText {
         self.text_section.screen_position = self.anim.move_point((self.bounds.x as f32 + ICON_MARGIN, self.bounds.y as f32));
     }
 
-    pub fn update(&mut self, delta: std::time::Duration) -> bool {
+    pub fn update(&mut self, delta: std::time::Duration, context: &IconContext) -> bool {
         self.anim.update(delta, self.visible);
         self.update_section_position();
 
         if let Some(get_text) = &self.get_text {
             let current_string = self.text_section.text[0].text.clone();
-            let new_string = get_text();
+            let new_string = get_text(context);
             if current_string != new_string {
+                let size = approximate_text_size(&new_string);
                 self.text_section.text[0].text = new_string;
+                self.bounds.set_size(size.0, size.1);
                 return true;
             }
         }
@@ -528,10 +533,10 @@ impl Layout {
             background.bounds.set_center(top_left_position.0 + ICON_SIZE / 2., top_left_position.1 + ICON_SIZE / 2.);
             match self.direction {
                 Direction::Horizontal => {
-                    top_left_position.0 += self.calculated_size.0 / background_children_count as f32;
+                    top_left_position.0 += (self.calculated_size.0 - ICON_SIZE + 1.) / (background_children_count - 1) as f32;
                 }
                 Direction::Vertical => {
-                    top_left_position.1 += self.calculated_size.1 / background_children_count as f32;
+                    top_left_position.1 += (self.calculated_size.1 - ICON_SIZE + 1.) / (background_children_count - 1) as f32;
                 }
             }
         }
