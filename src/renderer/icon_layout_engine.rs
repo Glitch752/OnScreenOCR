@@ -336,7 +336,7 @@ impl Layout {
         }
     }
 
-    pub fn initialize(& mut self) {
+    pub fn initialize(&mut self) {
         self.calculate_size();
         let primary_dimension = match self.direction {
             Direction::Horizontal => self.calculated_size.0,
