@@ -443,12 +443,7 @@ impl ApplicationHandler for App {
                         self.hide_window();
                     }
                     Key::Named(NamedKey::Shift) => {
-                        self.selection.shift_held =
-                            event.state == winit::event::ElementState::Pressed;
-                        if event.state == winit::event::ElementState::Pressed {
-                            self.selection.start_drag_location = self.relative_mouse_pos;
-                            self.selection.start_drag_origin = self.selection.polygon.get_origin();
-                        }
+                        self.selection.shift_held = event.state == winit::event::ElementState::Pressed;
                     }
                     Key::Named(NamedKey::Control) => {
                         self.selection.ctrl_held =

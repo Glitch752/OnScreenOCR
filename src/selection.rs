@@ -164,9 +164,41 @@ pub(crate) struct Selection {
 
     pub mouse_down: bool,
     pub shift_held: bool,
-    pub start_drag_location: (i32, i32),
-    pub start_drag_origin: (f32, f32),
     pub ctrl_held: bool,
+
+    drag_state: DraggingEditState,
+}
+
+enum PolygonHitResult {
+    None,
+    Vertex(usize),
+    Edge(usize, f32)
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+enum DraggingEditState {
+    #[default]
+    None,
+    NewBox(NewBoxEditState),
+    ShiftSelection(ShiftSelectionEditState),
+    PolygonVertex(PolygonVertexEditState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct NewBoxEditState {
+    start_location: (i32, i32),
+    start_origin: (f32, f32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PolygonVertexEditState {
+    vertex_index: usize
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ShiftSelectionEditState {
+    start_location: (i32, i32),
+    start_origin: (f32, f32)
 }
 
 impl Selection {
@@ -177,8 +209,7 @@ impl Selection {
         self.mouse_down = false;
 
         self.shift_held = false;
-        self.start_drag_location = (0, 0);
-        self.start_drag_origin = (0., 0.);
+        self.drag_state = DraggingEditState::None;
         
         self.ctrl_held = false;
     }
@@ -195,17 +226,25 @@ impl Selection {
             return false;
         }
 
-        if !self.shift_held {
-            self.bounds.width = x - self.bounds.x;
-            self.bounds.height = y - self.bounds.y;
-            self.polygon.set_from_bounds(&self.bounds);
-        } else {
-            let (start_x, start_y) = self.start_drag_location;
-            let (start_bounds_x, start_bounds_y) = self.start_drag_origin;
-            let (dx, dy) = (x - start_x, y - start_y);
-            self.polygon.set_origin(start_bounds_x + dx as f32, start_bounds_y + dy as f32);
-            self.polygon.clamp_to_screen(screen_size);
-            self.bounds.enclose_polygon(&self.polygon);
+        match self.drag_state {
+            DraggingEditState::None => {},
+            DraggingEditState::NewBox(ref state) => {
+                let (start_x, start_y) = state.start_location;
+                let (start_bounds_x, start_bounds_y) = state.start_origin;
+                let (dx, dy) = (x - start_x, y - start_y);
+                self.polygon.set_origin(start_bounds_x + dx as f32, start_bounds_y + dy as f32);
+                self.polygon.clamp_to_screen(screen_size);
+                self.bounds.enclose_polygon(&self.polygon);
+            }
+            DraggingEditState::ShiftSelection(ref state) => {
+                self.bounds.width = x - self.bounds.x;
+                self.bounds.height = y - self.bounds.y;
+                self.polygon.set_from_bounds(&self.bounds);
+            }
+            DraggingEditState::PolygonVertex(ref vertex) => {
+                self.polygon.vertices[vertex.vertex_index].x = x as f32;
+                self.polygon.vertices[vertex.vertex_index].y = y as f32;
+            }
         }
 
         true
@@ -223,15 +262,44 @@ impl Selection {
         let mut moved = false;
 
         if state == winit::event::ElementState::Pressed {
-            if !self.shift_held {
-                self.bounds.x = x;
-                self.bounds.y = y;
-                self.bounds.width = 0;
-                self.bounds.height = 0;
-                moved = true;
+            let mut new_box = false;
+            if icon_context.settings.use_polygon {
+                let hit = self.detect_polygon_hit(mouse_position);
+                match hit {
+                    PolygonHitResult::Vertex(index) => {
+                        self.drag_state = DraggingEditState::PolygonVertex(PolygonVertexEditState { vertex_index: index });
+                        moved = true;
+                    },
+                    PolygonHitResult::Edge(index, _) => {
+                        println!("Hit edge {}", index);
+                        todo!();
+                        moved = true;
+                    },
+                    PolygonHitResult::None => {
+                        new_box = true;
+                    }
+                }
             } else {
-                self.start_drag_location = (x, y);
-                self.start_drag_origin = self.polygon.get_origin();
+                new_box = true;
+            }
+            
+            if new_box {
+                if !self.shift_held {
+                    self.bounds.x = x;
+                    self.bounds.y = y;
+                    self.bounds.width = 0;
+                    self.bounds.height = 0;
+                    moved = true;
+                    self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
+                        start_location: (x, y),
+                        start_origin: self.polygon.get_origin()
+                    });
+                } else {
+                    self.drag_state = DraggingEditState::NewBox(ShiftSelectionEditState {
+                        start_location: (x, y),
+                        start_origin: self.polygon.get_origin()
+                    });
+                }
             }
             self.mouse_down = true;
         } else {
@@ -241,6 +309,33 @@ impl Selection {
         icon_context.settings_panel_visible = false;
 
         moved
+    }
+
+    fn detect_polygon_hit(&self, mouse_position: (i32, i32)) -> PolygonHitResult {
+        let margin = 5.0;
+
+        for vertex in &self.polygon.vertices {
+            let (x, y) = (vertex.x, vertex.y);
+            if (x - mouse_position.0 as f32).abs() < margin && (y - mouse_position.1 as f32).abs() < margin {
+                return PolygonHitResult::Vertex(self.polygon.vertices.iter().position(|v| v.x == x && v.y == y).unwrap());
+            }
+        }
+
+        for i in 0..self.polygon.vertices.len() {
+            let vertex1 = self.polygon.vertices[i];
+            let vertex2 = self.polygon.vertices[(i + 1) % self.polygon.vertices.len()];
+            let (x1, y1) = (vertex1.x, vertex1.y);
+            let (x2, y2) = (vertex2.x, vertex2.y);
+
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let d = ((x1 - mouse_position.0 as f32) * dy - (y1 - mouse_position.1 as f32) * dx).abs() / (dx * dx + dy * dy).sqrt();
+            if d < margin {
+                return PolygonHitResult::Edge(i, d);
+            }
+        }
+
+        PolygonHitResult::None
     }
 }
 
