@@ -19,6 +19,15 @@ pub enum IconEvent {
 pub fn get_icon_layouts() -> IconLayouts {
     let mut menubar_layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
     menubar_layout.add_icon({
+        let mut icon = create_icon!("hexagon", IconBehavior::SettingToggle);
+        icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.use_polygon }));
+        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
+            ctx.settings.use_polygon = !ctx.settings.use_polygon;
+        }));
+        icon.tooltip_text = Some("Use polygons (Tab)".to_string());
+        icon
+    });
+    menubar_layout.add_icon({
         let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
         icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
@@ -93,6 +102,7 @@ pub fn get_icon_layouts() -> IconLayouts {
     }
 
     settings_layout.add_text(IconText::new("Settings".to_string()));
+    horizontal_setting_layout!("Draw polygon paths (Tab)", "hexagon", use_polygon, true);
     horizontal_setting_layout!("Maintain newlines in text (1)", "new-line", maintain_newline, true);
     horizontal_setting_layout!("Reformat and correct text (2)", "fix-text", reformat_and_correct, true);
     horizontal_setting_layout!("Background blur enabled (3)", "blur", background_blur_enabled);

@@ -1,17 +1,32 @@
 use pixels::{check_texture_size, wgpu::{self, util::DeviceExt}, TextureError};
 
-use crate::{screenshot::Screenshot, selection::Selection};
+use crate::{screenshot::Screenshot, selection::{Polygon, Selection}};
 
 use super::IconContext;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Debug)]
 pub(crate) struct Locals {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    blur_enabled: u32
+    blur_enabled: u32,
+    polygon: Polygon
+}
+
+impl Locals {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let blur_enabled_bytes = bytemuck::bytes_of(&self.blur_enabled);
+        let polygon_bytes = bytemuck::try_cast_slice(self.polygon.vertices.as_slice());
+        if polygon_bytes.is_err() {
+            eprintln!("Failed to cast polygon vertices to bytes");
+            return vec![];
+        }
+
+        let polygon_bytes = polygon_bytes.unwrap();
+        let mut bytes = Vec::with_capacity(blur_enabled_bytes.len() + polygon_bytes.len());
+        bytes.extend_from_slice(blur_enabled_bytes);
+        bytes.extend_from_slice(&polygon_bytes);
+
+        bytes
+    }
 }
 
 impl Locals {

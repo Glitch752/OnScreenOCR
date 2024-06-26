@@ -19,12 +19,43 @@ fn vs_main(
 
 @group(0) @binding(0) var r_tex_color: texture_2d<f32>;
 @group(0) @binding(1) var r_tex_sampler: sampler;
+
+struct Polygon {
+    @align(16)
+    vertices: array<vec2<f32>>
+}
+
+// Reference: https://www.shadertoy.com/view/wdBXRW
+fn polygon_signed_distance(point: vec2<f32>, polygon: Polygon) -> f32 {
+    var vertices = polygon.vertices;
+
+    f32 d = dot(point - vertices[0], p - vertices[0]);
+    f32 s = 1.0;
+    for(var i: i32 = 0, var last: i32 = num - 1; i < num; last = i, i++) {
+        // Distance
+        vec2 e = vertices[last] - vertices[i];
+        vec2 w = point - vertices[i];
+
+        vec2 b = w - e * clamp(dot(w,e)/dot(e,e), 0.0, 1.0);
+        d = min(d, dot(b,b));
+
+        // Winding number from https://web.archive.org/web/20210228233911/http://geomalgorithms.com/a03-_inclusion.html
+        vec3<bool> conditions = vec3<bool>(
+            point.y >= vertices[i].y,
+            point.y < vertices[last].y,
+            e.x*w.y > e.y*w.x
+        );
+        if(all(conditions) || !any(conditions)) {
+            s = -s;
+        }
+    }
+    
+    return s * sqrt(d);
+}
+
 struct Locals {
-    @location(0) x: f32,
-    @location(1) y: f32,
-    @location(2) width: f32,
-    @location(3) height: f32,
-    @location(4) blur_enabled: u32
+    @location(0) blur_enabled: u32
+    @location(1) polygon: Polygon
 }
 @group(0) @binding(2) var<uniform> r_locals: Locals;
 
@@ -32,7 +63,7 @@ const BLUR_RADIUS = 2.0;
 const BLUR_ITERATIONS = 2.0;
 const OUT_OF_BOX_TINT = vec3<f32>(0.4, 0.4, 0.42);
 
-const BORDER_WIDTH = 1.0;
+const BORDER_WIDTH = 5.0;
 const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);
 
 fn get_blurred_color(
@@ -89,36 +120,13 @@ fn fs_main(
     // It's also not like we care about performance _that_ much
     var in_border: f32 = 0.0;
     var in_box: f32 = 0.0;
-    if(BORDER_WIDTH > 1.0) {
-        // Even on both sides
-        let half_horiz_bw = BORDER_WIDTH / screen_dimensions.x / 2.0;
-        let half_vert_bw = BORDER_WIDTH / screen_dimensions.y / 2.0;
-
-        in_border =
-            step(r_locals.x - half_horiz_bw, tex_coord.x) *
-            step(r_locals.y - half_vert_bw, tex_coord.y) *
-            step(tex_coord.x, r_locals.x + r_locals.width + half_horiz_bw) *
-            step(tex_coord.y, r_locals.y + r_locals.height + half_vert_bw);
-        in_box =
-            step(r_locals.x + half_horiz_bw, tex_coord.x) *
-            step(r_locals.y + half_vert_bw, tex_coord.y) *
-            step(tex_coord.x, r_locals.x + r_locals.width - half_horiz_bw) *
-            step(tex_coord.y, r_locals.y + r_locals.height - half_vert_bw);
-    } else {
-        // To prevent pixel misalignment, make the border only go outwards
-        let horiz_bw = BORDER_WIDTH / screen_dimensions.x;
-        let vert_bw = BORDER_WIDTH / screen_dimensions.y;
-
-        in_border =
-            step(r_locals.x - horiz_bw, tex_coord.x) *
-            step(r_locals.y - vert_bw, tex_coord.y) *
-            step(tex_coord.x, r_locals.x + r_locals.width + horiz_bw) *
-            step(tex_coord.y, r_locals.y + r_locals.height + vert_bw);
-        in_box =
-            step(r_locals.x, tex_coord.x) *
-            step(r_locals.y, tex_coord.y) *
-            step(tex_coord.x, r_locals.x + r_locals.width) *
-            step(tex_coord.y, r_locals.y + r_locals.height);
+    
+    var distance = polygon_signed_distance(tex_coord, r_locals.polygon.vertices);
+    if(distance < 0.0) {
+        in_box = 1.0;
+    }
+    if(distance < BORDER_WIDTH) {
+        in_border = 1.0;
     }
 
     let in_border_color = mix(BORDER_COLOR, in_box_color, in_box);

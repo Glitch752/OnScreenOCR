@@ -17,6 +17,8 @@ pub struct OCRLanguage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsManager {
+    pub use_polygon: bool,
+    
     pub maintain_newline: bool,
     pub reformat_and_correct: bool,
     pub background_blur_enabled: bool,
@@ -143,6 +145,7 @@ impl SettingsManager {
 
         // Default settings
         Self {
+            use_polygon: false,
             maintain_newline: true,
             reformat_and_correct: true,
             background_blur_enabled: true,
