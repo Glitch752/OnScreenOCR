@@ -47,7 +47,7 @@ impl Renderer {
     pub(crate) fn write_screenshot_to_texture(
         &mut self,
         pixels: &pixels::Pixels,
-        screenshot: Screenshot
+        screenshot: &Screenshot
     ) -> Result<(), TextureError> {
         self.background_renderer.write_screenshot_to_texture(pixels, screenshot)?;
         Ok(())

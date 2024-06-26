@@ -174,6 +174,17 @@ mod ffi {
 		new_data
 	}
 
+	fn bgra_to_rgba(data: Vec<u8>) -> Vec<u8> {
+		let mut new_data = Vec::with_capacity(data.len());
+		for chunk in data.chunks(4) {
+			new_data.push(chunk[2]);
+			new_data.push(chunk[1]);
+			new_data.push(chunk[0]);
+			new_data.push(chunk[3]);
+		}
+		new_data
+	}
+
 	/// This may never happen, given the horrific quality of Win32 APIs
 	pub fn screenshot_global_position(position: (i32, i32), size: (u32, u32)) -> crate::screenshot::ScreenResult {
 		unsafe {
@@ -238,6 +249,7 @@ mod ffi {
 			DeleteObject(h_bmp);
 
 			let data = flip_rows(data, height as usize, width as usize*pixel_width);
+			let data = bgra_to_rgba(data);
 
 			Ok(crate::screenshot::ScreenshotData {
 				data: data,

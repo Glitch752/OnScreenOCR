@@ -164,11 +164,11 @@ impl App {
                 }
                 IconEvent::ActiveOCRLeft => {
                     self.icon_context.settings.ocr_language_decrement();
-                    self.ocr_handler.update_ocr_language(self.icon_context.settings.ocr_language_code.clone());
+                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.ocr_language_code.clone());
                 }
                 IconEvent::ActiveOCRRight => {
                     self.icon_context.settings.ocr_language_increment();
-                    self.ocr_handler.update_ocr_language(self.icon_context.settings.ocr_language_code.clone());
+                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.ocr_language_code.clone());
                 }
             }
         }
@@ -196,13 +196,21 @@ impl App {
             return;
         }
 
-        let file = File::open("cropped.png");
-        if file.is_err() {
-            eprintln!("Error opening file: {:?}", file);
+        let mut pos_bounds = self.selection.bounds.to_positive_size();
+        if pos_bounds.width < 5 || pos_bounds.height < 5 {
             return;
         }
-        let png_reader = BufReader::new(file.unwrap());
-        let img = image::load(png_reader, image::ImageFormat::Png);
+        
+        let screenshot = self.
+
+        if pos_bounds.x + pos_bounds.width > screenshot.width as i32 {
+            pos_bounds.width = screenshot.width as i32 - pos_bounds.x;
+        }
+        if pos_bounds.y + pos_bounds.height > screenshot.height as i32 {
+            pos_bounds.height = screenshot.height as i32 - pos_bounds.y;
+        }
+
+        // Crop the screenshot
         if img.is_err() {
             eprintln!("Error loading image: {:?}", img);
             return;
@@ -242,7 +250,6 @@ impl ApplicationHandler for App {
             let screenshot = screenshot_from_handle(
                 monitor.clone().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
             );
-            self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
 
             // Create the window
             let window = event_loop
@@ -268,12 +275,13 @@ impl ApplicationHandler for App {
 
             let builder = PixelsBuilder::new(width, height, surface_texture);
             let builder = builder.clear_color(pixels::wgpu::Color::WHITE);
-            let builder =
-                builder.render_texture_format(pixels::wgpu::TextureFormat::Bgra8UnormSrgb);
+            let builder = builder.render_texture_format(pixels::wgpu::TextureFormat::Rgba8UnormSrgb);
             let pixels = builder.build().expect("Unable to create pixels");
 
             let shader_renderer = renderer::Renderer::new(&pixels, width, height, screenshot.bytes.as_slice())
                 .expect("Unable to create shader renderer");
+            
+            self.ocr_handler.set_screenshot(screenshot);
 
             self.window_state = Some(WindowState {
                 window,
@@ -333,11 +341,11 @@ impl ApplicationHandler for App {
                 window.current_monitor().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
             );
 
-            self.ocr_handler.set_screenshot(screenshot.clone()); // TODO: Remove this .clone() somehow
-            let result = shader_renderer.write_screenshot_to_texture(pixels, screenshot);
+            let result = shader_renderer.write_screenshot_to_texture(pixels, &screenshot);
             if result.is_err() {
                 println!("Error writing screenshot to texture: {:?}", result);
             }
+            self.ocr_handler.set_screenshot(screenshot);
 
             self.selection.reset();
             self.icon_context.reset();

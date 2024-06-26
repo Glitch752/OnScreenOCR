@@ -240,7 +240,7 @@ impl BackgroundRenderer {
     pub(crate) fn write_screenshot_to_texture(
         &mut self,
         pixels: &pixels::Pixels,
-        screenshot: Screenshot
+        screenshot: &Screenshot
     ) -> Result<(), TextureError> {
         pixels.queue().write_texture(
             wgpu::ImageCopyTexture {
