@@ -127,7 +127,7 @@ impl OCRHandler {
         self.throttler.put(OCREvent::ScreenshotChanged(screenshot));
     }
 
-    pub fn before_reopen_window(&mut self) {
+    pub fn reset_state(&mut self) {
         self.ocr_preview_text = None;
     }
 

@@ -197,6 +197,10 @@ impl App {
                     self.icon_context.settings.tesseract_settings.reload();
                     self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
                 }
+                IconEvent::ChangeUsePolygon => {
+                    self.selection.reset();
+                    self.ocr_handler.reset_state();
+                }
             }
         }
     }
@@ -368,7 +372,7 @@ impl ApplicationHandler for App {
             let shader_renderer = &mut window_state.shader_renderer;
 
             shader_renderer.before_reopen_window();
-            self.ocr_handler.before_reopen_window();
+            self.ocr_handler.reset_state();
             
             let window = &window_state.window;
             let screenshot = screenshot_from_handle(
@@ -443,7 +447,7 @@ impl ApplicationHandler for App {
                             event.state == winit::event::ElementState::Pressed;
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.start_drag_location = self.relative_mouse_pos;
-                            self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
+                            self.selection.start_drag_origin = self.selection.polygon.get_origin();
                         }
                     }
                     Key::Named(NamedKey::Control) => {
@@ -530,23 +534,9 @@ impl ApplicationHandler for App {
                     let was_handled = window_state.shader_renderer.mouse_event((x, y), state, &mut self.icon_context);
 
                     if !was_handled {
-                        if state == winit::event::ElementState::Pressed {
-                            if !self.selection.shift_held {
-                                self.selection.bounds.x = x;
-                                self.selection.bounds.y = y;
-                                self.selection.bounds.width = 0;
-                                self.selection.bounds.height = 0;
-                                self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
-                            } else {
-                                self.selection.start_drag_location = (x, y);
-                                self.selection.start_drag_bounds_origin = (self.selection.bounds.x, self.selection.bounds.y);
-                            }
-                            self.selection.mouse_down = true;
-                        } else {
-                            self.selection.mouse_down = false;
+                        if self.selection.mouse_input(state, button, self.relative_mouse_pos, self.size, &mut self.icon_context) {
+                            self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                         }
-
-                        self.icon_context.settings_panel_visible = false;
                     }
 
                     self.window_state.as_ref().unwrap().window.request_redraw();
@@ -563,27 +553,12 @@ impl ApplicationHandler for App {
                 }
 
                 self.relative_mouse_pos = (position.x as i32, position.y as i32);
+                let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size, &self.icon_context);
 
-                if (!self.selection.mouse_down) {
-                    return;
+                if changed {
+                    self.window_state.as_ref().unwrap().window.request_redraw();
+                    self.ocr_handler.selection_changed(&self.selection);
                 }
-
-                // If shift is held, move the selection instead of resizing
-                let (x, y) = (position.x as i32, position.y as i32);
-                if !self.selection.shift_held {
-                    self.selection.bounds.width = x - self.selection.bounds.x;
-                    self.selection.bounds.height = y - self.selection.bounds.y;
-                } else {
-                    let (start_x, start_y) = self.selection.start_drag_location;
-                    let (start_bounds_x, start_bounds_y) = self.selection.start_drag_bounds_origin;
-                    let (dx, dy) = (x - start_x, y - start_y);
-                    self.selection.bounds.x = start_bounds_x + dx;
-                    self.selection.bounds.y = start_bounds_y + dy;
-                    self.selection.bounds.clamp_to_screen(self.size);
-                }
-                self.window_state.as_ref().unwrap().window.request_redraw();
-
-                self.ocr_handler.selection_changed(&self.selection);
             }
             _ => (),
         }

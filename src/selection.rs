@@ -1,3 +1,7 @@
+use winit::event::{ElementState, MouseButton};
+
+use crate::renderer::IconContext;
+
 #[derive(Debug, Clone, Default, Copy, PartialEq)]
 pub(crate) struct Bounds {
     pub x: i32,
@@ -119,6 +123,11 @@ impl Bounds {
     }
 
     pub fn enclose_polygon(&mut self, polygon: &Polygon) {
+        if polygon.vertices.is_empty() {
+            *self = Bounds::default();
+            return;
+        }
+
         let mut min_x = i32::MAX;
         let mut min_y = i32::MAX;
         let mut max_x = i32::MIN;
@@ -156,7 +165,7 @@ pub(crate) struct Selection {
     pub mouse_down: bool,
     pub shift_held: bool,
     pub start_drag_location: (i32, i32),
-    pub start_drag_bounds_origin: (i32, i32),
+    pub start_drag_origin: (f32, f32),
     pub ctrl_held: bool,
 }
 
@@ -169,9 +178,69 @@ impl Selection {
 
         self.shift_held = false;
         self.start_drag_location = (0, 0);
-        self.start_drag_bounds_origin = (0, 0);
+        self.start_drag_origin = (0., 0.);
         
         self.ctrl_held = false;
+    }
+
+    pub fn cursor_moved(
+        &mut self,
+        mouse_position: (i32, i32),
+        screen_size: (u32, u32),
+        icon_context: &IconContext
+    ) -> bool {
+        // If shift is held, move the selection instead of resizing
+        let (x, y) = (mouse_position.0, mouse_position.1);
+        if !self.mouse_down {
+            return false;
+        }
+
+        if !self.shift_held {
+            self.bounds.width = x - self.bounds.x;
+            self.bounds.height = y - self.bounds.y;
+            self.polygon.set_from_bounds(&self.bounds);
+        } else {
+            let (start_x, start_y) = self.start_drag_location;
+            let (start_bounds_x, start_bounds_y) = self.start_drag_origin;
+            let (dx, dy) = (x - start_x, y - start_y);
+            self.polygon.set_origin(start_bounds_x + dx as f32, start_bounds_y + dy as f32);
+            self.polygon.clamp_to_screen(screen_size);
+            self.bounds.enclose_polygon(&self.polygon);
+        }
+
+        true
+    }
+
+    pub fn mouse_input(
+        &mut self,
+        state: ElementState,
+        button: MouseButton,
+        mouse_position: (i32, i32),
+        screen_size: (u32, u32),
+        icon_context: &mut IconContext
+    ) -> bool {
+        let (x, y) = (mouse_position.0, mouse_position.1);
+        let mut moved = false;
+
+        if state == winit::event::ElementState::Pressed {
+            if !self.shift_held {
+                self.bounds.x = x;
+                self.bounds.y = y;
+                self.bounds.width = 0;
+                self.bounds.height = 0;
+                moved = true;
+            } else {
+                self.start_drag_location = (x, y);
+                self.start_drag_origin = self.polygon.get_origin();
+            }
+            self.mouse_down = true;
+        } else {
+            self.mouse_down = false;
+        }
+
+        icon_context.settings_panel_visible = false;
+
+        moved
     }
 }
 
@@ -203,5 +272,94 @@ impl Polygon {
 
     pub fn clear(&mut self) {
         self.vertices.clear();
+    }
+
+    pub fn get_origin(&self) -> (f32, f32) {
+        let min_x = self.vertices.iter().map(|v| v.x).fold(f32::INFINITY, f32::min);
+        let min_y = self.vertices.iter().map(|v| v.y).fold(f32::INFINITY, f32::min);
+        (min_x, min_y)
+    }
+
+    pub fn set_origin(&mut self, x: f32, y: f32) {
+        let current_origin = self.get_origin();
+
+        for vertex in self.vertices.iter_mut() {
+            vertex.x -= current_origin.0;
+            vertex.y -= current_origin.1;
+            vertex.x += x;
+            vertex.y += y;
+        }
+    }
+
+    pub fn move_by(&mut self, dx: f32, dy: f32) {
+        for vertex in self.vertices.iter_mut() {
+            vertex.x += dx;
+            vertex.y += dy;
+        }
+    }
+
+    pub fn clamp_to_screen(&mut self, screen_size: (u32, u32)) -> () {
+        if self.vertices.is_empty() {
+            return;
+        }
+
+        let min_x = self.vertices.iter().map(|v| v.x).fold(f32::INFINITY, f32::min);
+        let min_y = self.vertices.iter().map(|v| v.y).fold(f32::INFINITY, f32::min);
+        let max_x = self.vertices.iter().map(|v| v.x).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = self.vertices.iter().map(|v| v.y).fold(f32::NEG_INFINITY, f32::max);
+
+        let mut dx = 0.0;
+        let mut dy = 0.0;
+
+        if min_x < 0.0 {
+            dx = -min_x;
+        }
+        if min_y < 0.0 {
+            dy = -min_y;
+        }
+
+        if max_x > screen_size.0 as f32 {
+            dx = screen_size.0 as f32 - max_x;
+        }
+        if max_y > screen_size.1 as f32 {
+            dy = screen_size.1 as f32 - max_y;
+        }
+
+        self.move_by(dx, dy);
+
+        // If any vertices are still outside the screen, just clamp them
+        for vertex in self.vertices.iter_mut() {
+            if vertex.x < 0.0 {
+                vertex.x = 0.0;
+            }
+            if vertex.y < 0.0 {
+                vertex.y = 0.0;
+            }
+            if vertex.x > screen_size.0 as f32 {
+                vertex.x = screen_size.0 as f32;
+            }
+            if vertex.y > screen_size.1 as f32 {
+                vertex.y = screen_size.1 as f32;
+            }
+        }
+    }
+
+    pub fn deduplicate(&mut self) {
+        let mut deduplicated: Vec<Vertex> = Vec::new();
+        for vertex in &self.vertices {
+            if deduplicated.iter().find(|v| v.x == vertex.x && v.y == vertex.y).is_none() {
+                deduplicated.push(*vertex);
+            }
+        }
+        self.vertices = deduplicated;
+    }
+
+    pub fn set_from_bounds(&mut self, bounds: &Bounds) {
+        self.vertices = vec![
+            Vertex::new(bounds.x as f32, bounds.y as f32),
+            Vertex::new(bounds.x as f32 + bounds.width as f32, bounds.y as f32),
+            Vertex::new(bounds.x as f32 + bounds.width as f32, bounds.y as f32 + bounds.height as f32),
+            Vertex::new(bounds.x as f32, bounds.y as f32 + bounds.height as f32)
+        ];
     }
 }

@@ -13,7 +13,9 @@ pub enum IconEvent {
     UpdateOCRFormatOption,
 
     RefreshOCRConfiguration,
-    OpenOCRConfiguration
+    OpenOCRConfiguration,
+
+    ChangeUsePolygon
 }
 
 pub fn get_icon_layouts() -> IconLayouts {
@@ -23,6 +25,7 @@ pub fn get_icon_layouts() -> IconLayouts {
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.use_polygon }));
         icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
             ctx.settings.use_polygon = !ctx.settings.use_polygon;
+            ctx.channel.send(IconEvent::ChangeUsePolygon).expect("Unable to send change use polygon event");
         }));
         icon.tooltip_text = Some("Use polygons (Tab)".to_string());
         icon
@@ -161,7 +164,7 @@ pub fn get_icon_layouts() -> IconLayouts {
         }
     );
     icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-    icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 7. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
+    icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 8. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
 
     icon_layouts.initialize();
 
