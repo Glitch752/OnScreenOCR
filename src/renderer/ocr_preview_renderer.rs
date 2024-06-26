@@ -116,6 +116,8 @@ impl OCRPreviewRenderer {
         let mut text = ocr_preview_text.clone().unwrap_or_else(|| self.last_text.clone().unwrap());
         if icon_context.settings.add_pilcrow_in_preview {
             text = text.lines().map(|x| x.to_string() + " ¶").collect::<Vec<String>>().join("\n");
+            // Remove the last pilcrow
+            text.pop();
         }
 
         self.last_text = Some(text.clone());

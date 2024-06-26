@@ -1,7 +1,7 @@
 use std::{sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
-use crate::{screenshot::Screenshot, selection::{Bounds, Selection}, settings::TesseractSettings};
+use crate::{screenshot::Screenshot, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractSettings}};
 
 pub static LATEST_SCREENSHOT_PATH: &str = "latest.png";
 
@@ -10,15 +10,16 @@ const DEBOUNE_TIME: Duration = Duration::from_millis(50);
 #[derive(Debug, Clone)]
 pub(crate) enum OCREvent {
     SelectionChanged(Bounds),
-    SettingsUpdated(TesseractSettings, Bounds),
-    ScreenshotChanged(Screenshot)
+    SettingsUpdated(TesseractSettings),
+    ScreenshotChanged(Screenshot),
+    FormatOptionChanged(FormatOptions),
 }
 
 impl PartialEq for OCREvent {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (OCREvent::SelectionChanged(_), OCREvent::SelectionChanged(_)) => true,
-            (OCREvent::SettingsUpdated(_, _), OCREvent::SettingsUpdated(_, _)) => true,
+            (OCREvent::SettingsUpdated(_), OCREvent::SettingsUpdated(_)) => true,
             (OCREvent::ScreenshotChanged(_), OCREvent::ScreenshotChanged(_)) => true,
             _ => false
         }
@@ -29,13 +30,31 @@ pub(crate) struct OCRHandler {
     pub throttler: OCRThrottler<OCREvent>,
     pub ocr_result_receiver: mpsc::Receiver<String>,
     pub ocr_preview_text: Option<String>,
-    pub last_selection_bounds: Option<Bounds>, // Used to recalculate the same OCR when language changes
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct FormatOptions {
+    reformat_and_correct: bool,
+    maintain_newlines: bool,
+}
+
+impl FormatOptions {
+    pub fn from_settings(settings: &SettingsManager) -> Self {
+        Self {
+            reformat_and_correct: settings.reformat_and_correct,
+            maintain_newlines: settings.maintain_newline,
+        }
+    }
 }
 
 struct InitData {
     tx: mpsc::Sender<String>,
     tess_api: leptess::tesseract::TessApi,
-    screenshot_size: (u32, u32)
+    screenshot_size: (u32, u32),
+    format_options: FormatOptions,
+    last_selection_bounds: Option<Bounds>, // Used to recalculate the same OCR when language changes
+
+    hyphenated_word_list_cache: Vec<String>,
 }
 
 fn configure_tesseract(tesseract_settings: TesseractSettings) -> leptess::tesseract::TessApi {
@@ -45,7 +64,7 @@ fn configure_tesseract(tesseract_settings: TesseractSettings) -> leptess::tesser
 }
 
 impl OCRHandler {
-    pub fn new() -> Self {
+    pub fn new(initial_format_options: FormatOptions) -> Self {
         let (tx, rx) = mpsc::channel::<String>();
         let tesseract_settings = TesseractSettings::default();
         OCRHandler {
@@ -53,13 +72,24 @@ impl OCRHandler {
                 DEBOUNE_TIME,
                 move |event, init_data| match event {
                     OCREvent::SelectionChanged(bounds) => {
+                        init_data.last_selection_bounds = Some(bounds);
                         perform_ocr(bounds, init_data);
                     }
-                    OCREvent::SettingsUpdated(tesseract_settings, bounds) => {
+                    OCREvent::FormatOptionChanged(format_options) => {
+                        init_data.format_options = format_options;
+                        if let Some(bounds) = init_data.last_selection_bounds {
+                            perform_ocr(bounds, init_data);
+                        }
+                    }
+                    OCREvent::SettingsUpdated(tesseract_settings) => {
+                        init_data.hyphenated_word_list_cache = get_hyphenated_word_list_cache(&tesseract_settings.ocr_language_code);
+
                         init_data.tess_api = configure_tesseract(tesseract_settings);
                         let img = leptess::leptonica::pix_read(std::path::Path::new(LATEST_SCREENSHOT_PATH)).expect("Unable to read image");
                         init_data.tess_api.set_image(&img);
-                        perform_ocr(bounds, init_data);
+                        if let Some(bounds) = init_data.last_selection_bounds {
+                            perform_ocr(bounds, init_data);
+                        }
                     }
                     OCREvent::ScreenshotChanged(screenshot) => {
                         init_data.tess_api.raw.set_image(
@@ -77,17 +107,19 @@ impl OCRHandler {
                         screenshot_image.save(LATEST_SCREENSHOT_PATH).expect("Unable to save latest.png");
                     }
                 },
-                || {
+                move || {
                     InitData {
+                        hyphenated_word_list_cache: get_hyphenated_word_list_cache(&tesseract_settings.ocr_language_code),
                         tess_api: configure_tesseract(tesseract_settings),
                         tx,
-                        screenshot_size: (0, 0)
+                        screenshot_size: (0, 0),
+                        format_options: initial_format_options,
+                        last_selection_bounds: None
                     }
                 },
             ),
             ocr_result_receiver: rx,
-            ocr_preview_text: None,
-            last_selection_bounds: None
+            ocr_preview_text: None
         }
     }
 
@@ -101,8 +133,6 @@ impl OCRHandler {
 
     pub fn selection_changed(&mut self, latest_selection: Selection) {
         self.throttler.put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
-        
-        self.last_selection_bounds = Some(latest_selection.bounds);
     }
 
     pub fn update_ocr_preview_text(&mut self) -> bool {
@@ -123,7 +153,11 @@ impl OCRHandler {
     }
 
     pub fn update_ocr_settings(&mut self, settings: TesseractSettings) {
-        self.throttler.put(OCREvent::SettingsUpdated(settings, self.last_selection_bounds.unwrap_or_default()));
+        self.throttler.put(OCREvent::SettingsUpdated(settings));
+    }
+
+    pub fn format_option_changed(&mut self, format_options: FormatOptions) {
+        self.throttler.put(OCREvent::FormatOptionChanged(format_options));
     }
 }
 
@@ -144,8 +178,76 @@ fn perform_ocr(bounds: Bounds, init_data: &mut InitData) {
     tesseract_api.set_rectangle(pos_bounds.x, pos_bounds.y, pos_bounds.width, pos_bounds.height);
     tesseract_api.recognize();
 
-    let text = tesseract_api.get_utf8_text().unwrap_or("".to_string());
-    init_data.tx.send(text).expect("Unable to send text");
+    let mut text = tesseract_api.get_utf8_text().unwrap_or("".to_string());
+
+    if init_data.format_options.reformat_and_correct {
+        let mut corrected_text = text.clone();
+        if init_data.format_options.reformat_and_correct {
+            corrected_text = reformat_and_correct_text(corrected_text, init_data);
+        }
+        init_data.tx.send(corrected_text).expect("Unable to send text");
+    } else {
+        if !init_data.format_options.maintain_newlines {
+            text = text.replace("\n", " ");
+        }
+        init_data.tx.send(text).expect("Unable to send text");
+    }
+}
+
+fn get_hyphenated_word_list_cache(language_code: &str) -> Vec<String> {
+    let path = format!("./correction_data/hyphenated/{}.txt", language_code);
+    // If the file doesn't exist, return an empty list
+    if !std::fs::try_exists(&path).unwrap_or(false) {
+        return Vec::new();
+    }
+
+    // The files are split by newlines
+    let file = std::fs::read_to_string(path).expect("Unable to read hyphenated word list");
+    file.lines().map(|x| x.to_string()).collect()
+}
+
+fn reformat_and_correct_text(text: String, init_data: &mut InitData) -> String {
+    // 1. If a line ends with a hyphen and the word isn't detected to be a hyphenated word, remove the hyphen
+    let hyphenated_words = &init_data.hyphenated_word_list_cache;
+    let mut lines = text.lines().map(|x| format!("{}\n", x.to_string())).collect::<Vec<String>>();
+
+    // Remove empty lines. This may not be an ideal solution, but it works for now.
+    lines.retain(|x| !x.trim().is_empty());
+
+    let lines_loop = lines.clone();
+    for (line, i) in lines_loop.iter().zip(0..) {
+        if line.ends_with("-\n") {
+            // The last word of this line plus the first word of the next is our query
+            let last_word = line.split_whitespace().last().unwrap_or("");
+            let next_first_word = lines_loop.get(i + 1).map(|x| x.split_whitespace().next()).flatten().unwrap_or("");
+            let query = format!("{}{}", last_word, next_first_word);
+            if hyphenated_words.contains(&query) {
+                continue;
+            }
+
+            // Remove the hyphen and the newline
+            lines.get_mut(i).map(|x| {
+                let last = x.pop();
+                if last == Some('\n') {
+                    x.pop();
+                }
+            });
+            // Add a newline to the end of the word on the next line to roughly maintain the same formatting
+            lines.get_mut(i + 1).map(|x| {
+                let words = x.split_whitespace().collect::<Vec<&str>>();
+                if let Some(first) = words.first() {
+                    *x = format!("{}\n{}", first, &x[first.len()..].trim_start());
+                }
+            });
+        }
+    }
+    let mut text = lines.join("");
+
+    if !init_data.format_options.maintain_newlines {
+        text = text.replace("\n", " ");
+    }
+
+    return text;
 }
 
 enum State<Type> {

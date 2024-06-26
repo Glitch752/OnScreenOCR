@@ -4,7 +4,7 @@
 use clipboard::{ClipboardContext, ClipboardProvider};
 use clipboard_image::copy_image_to_clipboard;
 use inputbot::{KeybdKey::*, MouseCursor};
-use ocr_handler::{OCRHandler, LATEST_SCREENSHOT_PATH};
+use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::screenshot_from_handle;
 use selection::Selection;
@@ -76,7 +76,7 @@ impl Default for App {
             window_state: None,
             size: (0, 0),
             selection: Selection::default(),
-            ocr_handler: OCRHandler::new(),
+            ocr_handler: OCRHandler::new(FormatOptions::from_settings(&icon_context.settings)),
             relative_mouse_pos: (0, 0),
             
             icon_context,
@@ -167,6 +167,9 @@ impl App {
                 IconEvent::ActiveOCRRight => {
                     self.icon_context.settings.tesseract_settings.ocr_language_increment();
                     self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
+                }
+                IconEvent::UpdateOCRFormatOption => {
+                    self.ocr_handler.format_option_changed(FormatOptions::from_settings(&self.icon_context.settings));
                 }
             }
         }

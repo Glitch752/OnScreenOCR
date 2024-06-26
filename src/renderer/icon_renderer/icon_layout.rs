@@ -9,7 +9,8 @@ pub enum IconEvent {
     Screenshot,
     Close,
     ActiveOCRLeft,
-    ActiveOCRRight
+    ActiveOCRRight,
+    UpdateOCRFormatOption
 }
 
 pub fn get_icon_layouts() -> IconLayouts {
@@ -17,14 +18,20 @@ pub fn get_icon_layouts() -> IconLayouts {
     menubar_layout.add_icon({
         let mut icon = create_icon!("new-line", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.maintain_newline }));
-        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.maintain_newline = !ctx.settings.maintain_newline; }));
+        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
+            ctx.settings.maintain_newline = !ctx.settings.maintain_newline;
+            ctx.channel.send(IconEvent::UpdateOCRFormatOption).expect("Unable to send update OCR format option event");
+        }));
         icon.tooltip_text = Some("Maintain newlines in text (1)".to_string());
         icon
     });
     menubar_layout.add_icon({
         let mut icon = create_icon!("fix-text", IconBehavior::SettingToggle);
         icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.reformat_and_correct }));
-        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct; }));
+        icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
+            ctx.settings.reformat_and_correct = !ctx.settings.reformat_and_correct;
+            ctx.channel.send(IconEvent::UpdateOCRFormatOption).expect("Unable to send update OCR format option event");
+        }));
         icon.tooltip_text = Some("Reformat and correct text (2)".to_string());
         icon
     });
@@ -61,14 +68,20 @@ pub fn get_icon_layouts() -> IconLayouts {
     let mut settings_layout = Layout::new(Direction::Vertical, CrossJustify::Center, ICON_MARGIN * 1.5, false);
     
     macro_rules! horizontal_setting_layout {
-        ($name:literal, $icon:literal, $setting:ident) => {
+        ($name:literal, $icon:literal, $setting:ident) => { horizontal_setting_layout!($name, $icon, $setting, false); };
+        ($name:literal, $icon:literal, $setting:ident, $send_format_update:literal) => {
             settings_layout.add_layout({
                 let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
                 layout.add_text(IconText::new($name.to_string()));
                 layout.add_icon({
                     let mut icon = create_icon!($icon, IconBehavior::SettingToggle);
                     icon.get_active = Some(Box::new(|ctx: &IconContext| { ctx.settings.$setting }));
-                    icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.settings.$setting = !ctx.settings.$setting; }));
+                    icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
+                        ctx.settings.$setting = !ctx.settings.$setting;
+                        if $send_format_update {
+                            ctx.channel.send(IconEvent::UpdateOCRFormatOption).expect("Unable to send update OCR format option event");
+                        }
+                    }));
                     icon
                 });
                 layout
@@ -77,8 +90,8 @@ pub fn get_icon_layouts() -> IconLayouts {
     }
 
     settings_layout.add_text(IconText::new("Settings".to_string()));
-    horizontal_setting_layout!("Maintain newlines in text (1)", "new-line", maintain_newline);
-    horizontal_setting_layout!("Reformat and correct text (2)", "fix-text", reformat_and_correct);
+    horizontal_setting_layout!("Maintain newlines in text (1)", "new-line", maintain_newline, true);
+    horizontal_setting_layout!("Reformat and correct text (2)", "fix-text", reformat_and_correct, true);
     horizontal_setting_layout!("Background blur enabled (3)", "blur", background_blur_enabled);
     horizontal_setting_layout!("Add pilcrows to preview (4)", "return", add_pilcrow_in_preview);
     horizontal_setting_layout!("Close on copy (5)", "auto-close", close_on_copy);
