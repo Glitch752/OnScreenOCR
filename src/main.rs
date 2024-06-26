@@ -513,30 +513,30 @@ impl ApplicationHandler for App {
                 device_id,
                 state,
                 button,
-            } => match button {
-                winit::event::MouseButton::Left => {
-                    let (x, y) = {
-                        // We use the gobal mouse position and make it relative instead of the relative one
-                        // because the relative one can only be set when the mouse moves and it's possible
-                        // to click before then.
-                        let pos = MouseCursor::pos();
-                        let window = &self.window_state.as_ref().unwrap().window;
-                        let window_pos = window.inner_position().unwrap_or_default();
-                        (pos.0 - window_pos.x, pos.1 - window_pos.y)
-                    };
+            } => {
+                let (x, y) = {
+                    // We use the gobal mouse position and make it relative instead of the relative one
+                    // because the relative one can only be set when the mouse moves and it's possible
+                    // to click before then.
+                    let pos = MouseCursor::pos();
+                    let window = &self.window_state.as_ref().unwrap().window;
+                    let window_pos = window.inner_position().unwrap_or_default();
+                    (pos.0 - window_pos.x, pos.1 - window_pos.y)
+                };
 
-                    let window_state = self.window_state.as_mut().unwrap();
-                    let was_handled = window_state.shader_renderer.mouse_event((x, y), state, &mut self.icon_context);
-
-                    if !was_handled {
-                        if self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context) {
-                            self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
-                        }
-                    }
-
-                    self.window_state.as_ref().unwrap().window.request_redraw();
+                let window_state = self.window_state.as_mut().unwrap();
+                let mut was_handled = false;
+                if button == winit::event::MouseButton::Left {
+                    was_handled = window_state.shader_renderer.mouse_event((x, y), state, &mut self.icon_context);
                 }
-                _ => (),
+
+                if !was_handled {
+                    if self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context) {
+                        self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
+                    }
+                }
+
+                self.window_state.as_ref().unwrap().window.request_redraw();
             },
             #[allow(unused)]
             WindowEvent::CursorMoved {

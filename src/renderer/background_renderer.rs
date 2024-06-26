@@ -27,7 +27,8 @@ impl Locals {
         let vertex_count = self.polygon.vertices.len() as u32;
         let vertex_count_bytes = bytemuck::bytes_of(&vertex_count);
 
-        let polygon_bytes = bytemuck::try_cast_slice(&self.polygon.vertices);
+        let gpu_vertices = self.polygon.as_gpu_vertices();
+        let polygon_bytes = bytemuck::try_cast_slice(&gpu_vertices);
         if polygon_bytes.is_err() {
             eprintln!("Failed to cast polygon vertices to bytes");
             return vec![];

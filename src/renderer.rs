@@ -7,6 +7,8 @@ use pixels::{wgpu, PixelsContext, TextureError};
 use winit::event::ElementState;
 use crate::selection::Bounds;
 
+pub(crate) use animation::{SmoothMoveFadeAnimation, SmoothFadeAnimation};
+
 use crate::{screenshot::Screenshot, selection::Selection};
 
 mod icon_renderer;

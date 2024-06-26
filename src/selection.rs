@@ -1,6 +1,6 @@
 use winit::event::{ElementState, MouseButton};
 
-use crate::renderer::IconContext;
+use crate::renderer::{IconContext, SmoothFadeAnimation};
 
 #[derive(Debug, Clone, Default, Copy, PartialEq)]
 pub(crate) struct Bounds {
@@ -157,7 +157,7 @@ impl Bounds {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct Selection {
     pub bounds: Bounds,
     pub polygon: Polygon,
@@ -182,6 +182,7 @@ enum DraggingEditState {
     NewBox(NewBoxEditState),
     ShiftSelection(ShiftSelectionEditState),
     PolygonVertex(PolygonVertexEditState),
+    ShiftPolygonEdge(PolygonEdgeEditState)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -193,6 +194,13 @@ struct NewBoxEditState {
 #[derive(Debug, Clone, PartialEq)]
 struct PolygonVertexEditState {
     vertex_index: usize
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PolygonEdgeEditState {
+    start_location: (i32, i32),
+    start_origin: (f32, f32),
+    edge_index: usize
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -254,6 +262,18 @@ impl Selection {
                     });
                 }
             }
+            DraggingEditState::ShiftPolygonEdge(ref edge) => {
+                let (start_x, start_y) = edge.start_location;
+                let (start_bounds_x, start_bounds_y) = edge.start_origin;
+                let (dx, dy) = (x - start_x, y - start_y);
+                self.polygon.set_edge_origin(edge.edge_index, (start_bounds_x + dx as f32, start_bounds_y + dy as f32));
+                self.polygon.clamp_to_screen(screen_size);
+                self.bounds.enclose_polygon(&self.polygon);
+                
+                if !self.shift_held {
+                    self.check_edge_split_input(x, y, edge.edge_index);
+                }
+            }
             DraggingEditState::PolygonVertex(ref vertex) => {
                 self.polygon.vertices[vertex.vertex_index].x = x as f32;
                 self.polygon.vertices[vertex.vertex_index].y = y as f32;
@@ -264,11 +284,35 @@ impl Selection {
                     self.polygon.vertices[vertex.vertex_index].x = x;
                     self.polygon.vertices[vertex.vertex_index].y = y;
                 }
+
+                let deduplicated_pos = self.polygon.should_deduplicate(vertex.vertex_index);
+                if deduplicated_pos.is_some() {
+                    let (x, y) = deduplicated_pos.unwrap();
+                    self.polygon.vertices[vertex.vertex_index].x = x;
+                    self.polygon.vertices[vertex.vertex_index].y = y;
+                }
+
                 self.bounds.enclose_polygon(&self.polygon);
             }
         }
 
         true
+    }
+
+    fn check_edge_split_input(&mut self, x: i32, y: i32, index: usize) {
+        if !self.shift_held {
+            // Split the edge
+            let new_vertex = Vertex::new(x as f32, y as f32);
+
+            self.polygon.vertices.insert(index + 1, new_vertex);
+            self.drag_state = DraggingEditState::PolygonVertex(PolygonVertexEditState { vertex_index: index + 1 });
+        } else {
+            self.drag_state = DraggingEditState::ShiftPolygonEdge(PolygonEdgeEditState {
+                start_location: (x, y),
+                start_origin: self.polygon.get_edge_origin(index),
+                edge_index: index
+            });
+        }
     }
 
     pub fn mouse_input(
@@ -298,20 +342,13 @@ impl Selection {
                     },
                     PolygonHitResult::Edge(index) => {
                         if button == MouseButton::Right {
-                            if self.polygon.vertices.len() <= 3 {
+                            if self.polygon.vertices.len() <= 4 {
                                 return false;
                             }
                             self.polygon.vertices.remove(index);
-                            self.polygon.vertices.remove(index + 1 % self.polygon.vertices.len());
+                            self.polygon.vertices.remove(index % self.polygon.vertices.len());
                         } else {
-                            // Split the edge
-                            let new_vertex = Vertex {
-                                x: x as f32,
-                                y: y as f32
-                            };
-
-                            self.polygon.vertices.insert(index + 1, new_vertex);
-                            self.drag_state = DraggingEditState::PolygonVertex(PolygonVertexEditState { vertex_index: index + 1 });
+                            self.check_edge_split_input(x, y, index);
                         }
                     },
                     PolygonHitResult::None => {
@@ -353,6 +390,28 @@ impl Selection {
                     if self.should_merge_surrounding_edges(index.vertex_index).is_some() {
                         self.polygon.vertices.remove(index.vertex_index);
                     }
+
+                    // Also check the two neighboring vertices
+                    let prev_vertex_index = (index.vertex_index + self.polygon.vertices.len() - 1) % self.polygon.vertices.len();
+
+                    let next_vertex_index = (index.vertex_index + 1) % self.polygon.vertices.len();
+                    if self.should_merge_surrounding_edges(prev_vertex_index).is_some() {
+                        self.polygon.vertices.remove(prev_vertex_index);
+                    }
+                    if self.should_merge_surrounding_edges(next_vertex_index).is_some() {
+                        self.polygon.vertices.remove(next_vertex_index);
+                    }
+
+                    self.polygon.deduplicate();
+                }
+                DraggingEditState::ShiftPolygonEdge(edge) => {
+                    if self.should_merge_surrounding_edges(edge.edge_index).is_some() {
+                        self.polygon.vertices.remove(edge.edge_index);
+                    }
+                    if self.should_merge_surrounding_edges((edge.edge_index + 1) % self.polygon.vertices.len()).is_some() {
+                        self.polygon.vertices.remove((edge.edge_index + 1) % self.polygon.vertices.len());
+                    }
+                    self.polygon.deduplicate();
                 }
                 _ => {}
             }
@@ -367,9 +426,9 @@ impl Selection {
 
     fn should_merge_surrounding_edges(&self, vertex_index: usize) -> Option<(f32, f32)> {
         // If the two surrounding edges are within a small angle of each other, merge them
-        let vertex = self.polygon.vertices[vertex_index];
-        let prev_vertex = self.polygon.vertices[(vertex_index + self.polygon.vertices.len() - 1) % self.polygon.vertices.len()];
-        let next_vertex = self.polygon.vertices[(vertex_index + 1) % self.polygon.vertices.len()];
+        let vertex = &self.polygon.vertices[vertex_index];
+        let prev_vertex = &self.polygon.vertices[(vertex_index + self.polygon.vertices.len() - 1) % self.polygon.vertices.len()];
+        let next_vertex = &self.polygon.vertices[(vertex_index + 1) % self.polygon.vertices.len()];
 
         let (prev_dx, prev_dy) = (vertex.x - prev_vertex.x, vertex.y - prev_vertex.y);
         let (next_dx, next_dy) = (next_vertex.x - vertex.x, next_vertex.y - vertex.y);
@@ -386,21 +445,16 @@ impl Selection {
             let x = prev_vertex.x + t * (next_vertex.x - prev_vertex.x);
             let y = prev_vertex.y + t * (next_vertex.y - prev_vertex.y);
 
-            Some((x, y))
+            // Additionally, check if the vertex is close enough, so it doesn't depend as much on the line length.
+            let distance = ((vertex.x - x).powi(2) + (vertex.y - y).powi(2)).sqrt();
+            if distance < if self.shift_held || self.ctrl_held { 4.0 } else { 15.0 } {
+                return Some((x, y));
+            }
+
+            None
         } else {
             None
         }
-    }
-
-    pub fn get_device_coords_polygon(&self, window_width: f32, window_height: f32) -> Polygon {
-        let mut polygon = Polygon::new();
-        for vertex in self.polygon.vertices.iter() {
-            polygon.vertices.push(Vertex {
-                x: vertex.x / window_width,
-                y: vertex.y / window_height
-            });
-        }
-        polygon
     }
 
     fn detect_polygon_hit(&self, mouse_position: (i32, i32)) -> PolygonHitResult {
@@ -414,8 +468,8 @@ impl Selection {
         }
 
         for i in 0..self.polygon.vertices.len() {
-            let vertex1 = self.polygon.vertices[i];
-            let vertex2 = self.polygon.vertices[(i + 1) % self.polygon.vertices.len()];
+            let vertex1 = &self.polygon.vertices[i];
+            let vertex2 = &self.polygon.vertices[(i + 1) % self.polygon.vertices.len()];
             let (x1, y1) = (vertex1.x, vertex1.y);
             let (x2, y2) = (vertex2.x, vertex2.y);
 
@@ -435,29 +489,71 @@ impl Selection {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Polygon {
-    pub vertices: Vec<Vertex>
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Polygon {
+    pub vertices: Vec<Vertex>,
+    pub hovered_vertex: Option<usize>,
+    pub hovered_edge: Option<usize>
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Vertex {
+    pub x: f32,
+    pub y: f32,
+
+    pub vertex_highlight: SmoothFadeAnimation,
+    pub edge_highlight: SmoothFadeAnimation
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pub x: f32,
-    pub y: f32
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GPUVertex {
+    pub position: [f32; 2],
+    pub animation: u32
+}
+
+impl GPUVertex {
+    pub fn new(x: f32, y: f32, animation: u32) -> Self {
+        Self {
+            position: [x, y],
+            animation
+        }
+    }
 }
 
 impl Vertex {
     pub fn new(x: f32, y: f32) -> Self {
-        Self { x, y }
+        Self {
+            x, y,
+            vertex_highlight: SmoothFadeAnimation::default(),
+            edge_highlight: SmoothFadeAnimation::default()
+        }
+    }
+
+    pub fn as_gpu_vertex(&self) -> GPUVertex {
+        GPUVertex::new(self.x, self.y, self.get_animation_int())
+    }
+
+    fn get_animation_int(&self) -> u32 {
+        // We encode vertex and edge animations into the same integer
+        // The first 16 bits are this vertex's opacity, and the next 16 bits are the opacity of the edge connecting this vertex and the next one.
+        let vertex_opacity = (self.vertex_highlight.get_opacity() * 65535.0) as u32;
+        let edge_opacity = (self.edge_highlight.get_opacity() * 65535.0) as u32;
+        vertex_opacity << 16 | edge_opacity
+    }
+
+    fn update(&mut self, delta: std::time::Duration, edge_highlight: bool, vertex_highlight: bool) {
+        self.vertex_highlight.update(delta, vertex_highlight);
+        self.edge_highlight.update(delta, edge_highlight);
     }
 }
 
 impl Polygon {
     pub fn new() -> Self {
         Self {
-            vertices: Vec::new()
+            vertices: Vec::new(),
+            hovered_edge: None,
+            hovered_vertex: None
         }
     }
 
@@ -535,14 +631,35 @@ impl Polygon {
         }
     }
 
-    pub fn deduplicate(&mut self) {
-        let mut deduplicated: Vec<Vertex> = Vec::new();
-        for vertex in &self.vertices {
-            if deduplicated.iter().find(|v| v.x == vertex.x && v.y == vertex.y).is_none() {
-                deduplicated.push(*vertex);
+    pub fn should_deduplicate(&self, vertex_index: usize) -> Option<(f32, f32)> {
+        let margin = 5.0;
+        let vertex = &self.vertices[vertex_index];
+        for i in 0..self.vertices.len() {
+            if i == vertex_index {
+                continue;
+            }
+            let other_vertex = &self.vertices[i];
+            if (vertex.x - other_vertex.x).abs() < margin && (vertex.y - other_vertex.y).abs() < margin {
+                return Some((other_vertex.x, other_vertex.y));
             }
         }
-        self.vertices = deduplicated;
+
+        None
+    }
+
+    pub fn deduplicate(&mut self) {
+        let mut i = 0;
+        while i < self.vertices.len() {
+            if self.should_deduplicate(i).is_some() {
+                self.vertices.remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
+        if self.vertices.len() < 3 {
+            self.vertices.clear();
+        }
     }
 
     pub fn set_from_bounds(&mut self, bounds: &Bounds) {
@@ -552,5 +669,42 @@ impl Polygon {
             Vertex::new(bounds.x as f32 + bounds.width as f32, bounds.y as f32 + bounds.height as f32),
             Vertex::new(bounds.x as f32, bounds.y as f32 + bounds.height as f32)
         ];
+    }
+
+    pub fn get_edge_origin(&self, edge_index: usize) -> (f32, f32) {
+        let vertex1 = &self.vertices[edge_index];
+        let vertex2 = &self.vertices[(edge_index + 1) % self.vertices.len()];
+        let x = (vertex1.x + vertex2.x) / 2.0;
+        let y = (vertex1.y + vertex2.y) / 2.0;
+        (x, y)
+    }
+
+    pub fn set_edge_origin(&mut self, edge_index: usize, origin: (f32, f32)) {
+        let current_origin = self.get_edge_origin(edge_index);
+        let dx = origin.0 - current_origin.0;
+        let dy = origin.1 - current_origin.1;
+
+        let vertex1 = &mut self.vertices[edge_index];
+        vertex1.x += dx;
+        vertex1.y += dy;
+        
+        let vertices = self.vertices.len();
+        let vertex2 = &mut self.vertices[(edge_index + 1) % vertices];
+        vertex2.x += dx;
+        vertex2.y += dy;
+    }
+
+    pub fn as_gpu_vertices(&self) -> Vec<GPUVertex> {
+        self.vertices.iter().map(|v| v.as_gpu_vertex()).collect()
+    }
+
+    pub fn set_hovered_vertex(&mut self, vertex_index: Option<usize>) {
+        self.hovered_vertex = vertex_index;
+    }
+
+    pub fn update(&mut self, delta: std::time::Duration) {
+        for (vertex, i) in self.vertices.iter_mut().zip(0..) {
+            vertex.update(delta, self.hovered_edge.is_some_and(|idx| idx == i), self.hovered_vertex.is_some_and(|idx| idx == i));
+        }
     }
 }

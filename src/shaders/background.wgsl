@@ -21,13 +21,15 @@ fn vs_main(
 @group(0) @binding(1) var r_tex_sampler: sampler;
 
 struct Vertex {
-    @location(0) position: vec2<f32>
+    @location(0) position: vec2<f32>,
+    // Split into two 16-bit values -- one for the actual vertex, and one for the edge connecting it and the next vertex.
+    @location(1) highlight: u32,
 }
 
 struct Locals {
     @location(0) blur_enabled: u32,
-    @location(1) vertex_count: u32,
-    @location(2) vertices: array<Vertex>,
+    @location(2) vertex_count: u32,
+    @location(3) vertices: array<Vertex>,
 }
 @group(0) @binding(2) var<storage, read> r_locals: Locals;
 

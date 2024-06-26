@@ -17,7 +17,9 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
 - [ ] Allow exporting with tesseract's TSV mode (and maybe some others)
-- [ ] Free-form selection of OCR region
+- [X] Free-form selection of OCR region
+  - [ ] Undo/redo for edits
+  - [ ] Properly crop OCR input and screenshots
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

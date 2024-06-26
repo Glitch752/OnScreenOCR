@@ -74,3 +74,52 @@ impl SmoothMoveFadeAnimation {
         (self.visible_ratio - 1.).abs() < 0.01 || (self.visible_ratio - 0.).abs() < 0.01
     }
 }
+
+
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SmoothFadeAnimation {
+    target_visibility: bool,
+    visible_ratio: f32
+}
+
+#[allow(dead_code)]
+impl SmoothFadeAnimation {
+    pub fn new(start_visible: bool) -> Self {
+        Self {
+            target_visibility: start_visible,
+            visible_ratio: if start_visible { 1. } else { 0. }
+        }
+    }
+
+    pub fn update(&mut self, delta: std::time::Duration, target_visibility: bool) {
+        self.target_visibility = target_visibility;
+
+        let target_ratio = if self.target_visibility { 1. } else { 0. };
+        self.visible_ratio += (self.visible_ratio - target_ratio) * (1. - (delta.as_millis_f32() * 0.025).exp());
+        // Just in case something goes wrong
+        if self.visible_ratio.is_nan() || self.visible_ratio < 0. || self.visible_ratio > 1. {
+            self.visible_ratio = target_ratio;
+        }
+
+        if self.visible_ratio < 0.01 {
+            self.visible_ratio = 0.;
+        }
+    }
+
+    pub fn visible_at_all(&self) -> bool {
+        self.visible_ratio > 0.
+    }
+
+    pub fn fully_visible(&self) -> bool {
+        (self.visible_ratio - 1.).abs() < 0.01
+    }
+
+    pub fn get_opacity(&self) -> f32 {
+        self.visible_ratio
+    }
+
+    pub fn is_finished(&self) -> bool {
+        (self.visible_ratio - 1.).abs() < 0.01 || (self.visible_ratio - 0.).abs() < 0.01
+    }
+}
