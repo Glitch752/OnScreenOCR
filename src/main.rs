@@ -116,7 +116,7 @@ impl App {
             shader_renderer.update(
                 context,
                 self.size,
-                self.selection,
+                &self.selection,
                 self.ocr_handler.ocr_preview_text.clone(),
                 self.relative_mouse_pos,
                 &mut self.icon_context
@@ -466,28 +466,28 @@ impl ApplicationHandler for App {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.bounds.y += move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
-                            self.ocr_handler.selection_changed(self.selection);
+                            self.ocr_handler.selection_changed(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.bounds.y -= move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
-                            self.ocr_handler.selection_changed(self.selection);
+                            self.ocr_handler.selection_changed(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowLeft) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.bounds.x -= move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
-                            self.ocr_handler.selection_changed(self.selection);
+                            self.ocr_handler.selection_changed(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.bounds.x += move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
-                            self.ocr_handler.selection_changed(self.selection);
+                            self.ocr_handler.selection_changed(&self.selection);
                         }
                     }
 
@@ -583,7 +583,7 @@ impl ApplicationHandler for App {
                 }
                 self.window_state.as_ref().unwrap().window.request_redraw();
 
-                self.ocr_handler.selection_changed(self.selection);
+                self.ocr_handler.selection_changed(&self.selection);
             }
             _ => (),
         }

@@ -79,7 +79,7 @@ impl Renderer {
         &mut self,
         context: &PixelsContext,
         window_size: (u32, u32),
-        selection: Selection,
+        selection: &Selection,
         ocr_preview_text: Option<String>,
         relative_mouse_pos: (i32, i32),
         icon_context: &IconContext
@@ -90,7 +90,7 @@ impl Renderer {
         let device = &context.device;
         let queue = &context.queue;
 
-        self.ocr_preview_renderer.update(context, window_size, selection, ocr_preview_text, icon_context, delta, &mut self.icon_renderer);
+        self.ocr_preview_renderer.update(context, window_size, selection.bounds, ocr_preview_text, icon_context, delta, &mut self.icon_renderer);
         self.background_renderer.update(queue, window_size, selection, icon_context);
         self.icon_renderer.update(device, queue, delta, relative_mouse_pos, icon_context);
     }

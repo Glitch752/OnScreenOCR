@@ -131,7 +131,7 @@ impl OCRHandler {
         self.ocr_preview_text = None;
     }
 
-    pub fn selection_changed(&mut self, latest_selection: Selection) {
+    pub fn selection_changed(&mut self, latest_selection: &Selection) {
         self.throttler.put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
     }
 

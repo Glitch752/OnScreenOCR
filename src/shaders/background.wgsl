@@ -20,29 +20,50 @@ fn vs_main(
 @group(0) @binding(0) var r_tex_color: texture_2d<f32>;
 @group(0) @binding(1) var r_tex_sampler: sampler;
 
-struct Polygon {
-    @align(16)
-    vertices: array<vec2<f32>>
+struct Vertex {
+    @location(0) position: vec2<f32>
 }
 
+struct Locals {
+    @location(0) blur_enabled: u32,
+    @location(1) vertex_count: u32,
+    @location(2) vertices: array<Vertex>,
+}
+@group(0) @binding(2) var<storage, read> r_locals: Locals;
+
+const BLUR_RADIUS = 2.0;
+const BLUR_ITERATIONS = 2.0;
+const OUT_OF_BOX_TINT = vec3<f32>(0.4, 0.4, 0.42);
+
+const BORDER_WIDTH = 5.0;
+const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);
+
 // Reference: https://www.shadertoy.com/view/wdBXRW
-fn polygon_signed_distance(point: vec2<f32>, polygon: Polygon) -> f32 {
-    var vertices = polygon.vertices;
+fn polygon_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> f32 {
+    var screen_point: vec2<f32> = point * screen_dimensions;
 
-    f32 d = dot(point - vertices[0], p - vertices[0]);
-    f32 s = 1.0;
-    for(var i: i32 = 0, var last: i32 = num - 1; i < num; last = i, i++) {
+    var d: f32 = dot(
+        screen_point - r_locals.vertices[0].position * screen_dimensions,
+        screen_point - r_locals.vertices[0].position * screen_dimensions
+    );
+    var s: f32 = 1.0;
+
+    var num = i32(r_locals.vertex_count);
+    for(var i = 0; i < num; i += 1) {
+        var last: vec2<f32> = r_locals.vertices[i - 1].position * screen_dimensions;
+        var current: vec2<f32> = r_locals.vertices[i].position * screen_dimensions;
+
         // Distance
-        vec2 e = vertices[last] - vertices[i];
-        vec2 w = point - vertices[i];
+        var e: vec2<f32> = last - current;
+        var w: vec2<f32> = screen_point - current;
 
-        vec2 b = w - e * clamp(dot(w,e)/dot(e,e), 0.0, 1.0);
+        var b: vec2<f32> = w - e * clamp(dot(w,e) / dot(e,e), 0.0, 1.0);
         d = min(d, dot(b,b));
 
         // Winding number from https://web.archive.org/web/20210228233911/http://geomalgorithms.com/a03-_inclusion.html
-        vec3<bool> conditions = vec3<bool>(
-            point.y >= vertices[i].y,
-            point.y < vertices[last].y,
+        var conditions: vec3<bool> = vec3<bool>(
+            screen_point.y >= current.y,
+            screen_point.y < last.y,
             e.x*w.y > e.y*w.x
         );
         if(all(conditions) || !any(conditions)) {
@@ -52,19 +73,6 @@ fn polygon_signed_distance(point: vec2<f32>, polygon: Polygon) -> f32 {
     
     return s * sqrt(d);
 }
-
-struct Locals {
-    @location(0) blur_enabled: u32
-    @location(1) polygon: Polygon
-}
-@group(0) @binding(2) var<uniform> r_locals: Locals;
-
-const BLUR_RADIUS = 2.0;
-const BLUR_ITERATIONS = 2.0;
-const OUT_OF_BOX_TINT = vec3<f32>(0.4, 0.4, 0.42);
-
-const BORDER_WIDTH = 5.0;
-const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);
 
 fn get_blurred_color(
     tex_color: texture_2d<f32>,
@@ -121,7 +129,7 @@ fn fs_main(
     var in_border: f32 = 0.0;
     var in_box: f32 = 0.0;
     
-    var distance = polygon_signed_distance(tex_coord, r_locals.polygon.vertices);
+    var distance = polygon_signed_distance(tex_coord, screen_dimensions);
     if(distance < 0.0) {
         in_box = 1.0;
     }

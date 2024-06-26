@@ -1,7 +1,7 @@
 use glyph_brush::{ab_glyph::FontRef, BuiltInLineBreaker, HorizontalAlign, OwnedSection, OwnedText};
 use pixels::{wgpu, PixelsContext};
 
-use crate::{selection::{Bounds, Selection}, wgpu_text::{BrushBuilder, TextBrush}};
+use crate::{selection::Bounds, wgpu_text::{BrushBuilder, TextBrush}};
 
 use super::{animation::{MoveDirection, SmoothMoveFadeAnimation}, icon_renderer::{TEXT_HEIGHT, IconRenderer}, IconContext};
 
@@ -104,7 +104,7 @@ impl OCRPreviewRenderer {
         window_size: (u32, u32),
         icon_renderer: &mut IconRenderer,
         delta: std::time::Duration,
-        selection: Selection,
+        bounds: Bounds,
         #[allow(unused_variables)]
         icon_context: &super::IconContext
     ) -> Option<OwnedSection> {
@@ -125,7 +125,7 @@ impl OCRPreviewRenderer {
         let visible = ocr_preview_text.is_some(); // && !icon_context.settings_panel_visible;
 
         let max_line_chars = text.lines().map(|x| x.chars().count()).max().unwrap_or(0) as i32;
-        let placement = self.get_preview_text_placement(!visible, window_size, selection.bounds, text.lines().count() as i32, max_line_chars);
+        let placement = self.get_preview_text_placement(!visible, window_size, bounds, text.lines().count() as i32, max_line_chars);
         if placement.is_none() && self.last_placement.is_none() {
             icon_renderer.update_text_icon_positions(None);
             return None;
@@ -163,7 +163,7 @@ impl OCRPreviewRenderer {
         &mut self,
         context: &PixelsContext,
         window_size: (u32, u32),
-        selection: Selection,
+        bounds: Bounds,
         ocr_preview_text: Option<String>,
         icon_context: &IconContext,
         delta: std::time::Duration,
@@ -172,7 +172,7 @@ impl OCRPreviewRenderer {
         let device = &context.device;
         let queue = &context.queue;
 
-        let ocr_section = self.get_ocr_section(ocr_preview_text, window_size, icon_renderer, delta, selection, icon_context);
+        let ocr_section = self.get_ocr_section(ocr_preview_text, window_size, icon_renderer, delta, bounds, icon_context);
         self.should_render_text = ocr_section.is_some();
         if ocr_section.is_some() {
             self.text_brush.queue(device, queue, vec![ocr_section.as_ref().unwrap()]).unwrap();

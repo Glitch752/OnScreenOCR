@@ -1,6 +1,6 @@
 use pixels::{check_texture_size, wgpu::{self, util::DeviceExt}, TextureError};
 
-use crate::{screenshot::Screenshot, selection::{Polygon, Selection}};
+use crate::{screenshot::Screenshot, selection::{Polygon, Selection, Vertex}};
 
 use super::IconContext;
 
@@ -12,25 +12,7 @@ pub(crate) struct Locals {
 }
 
 impl Locals {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let blur_enabled_bytes = bytemuck::bytes_of(&self.blur_enabled);
-        let polygon_bytes = bytemuck::try_cast_slice(self.polygon.vertices.as_slice());
-        if polygon_bytes.is_err() {
-            eprintln!("Failed to cast polygon vertices to bytes");
-            return vec![];
-        }
-
-        let polygon_bytes = polygon_bytes.unwrap();
-        let mut bytes = Vec::with_capacity(blur_enabled_bytes.len() + polygon_bytes.len());
-        bytes.extend_from_slice(blur_enabled_bytes);
-        bytes.extend_from_slice(&polygon_bytes);
-
-        bytes
-    }
-}
-
-impl Locals {
-    pub(crate) fn new(selection: Selection, window_size: (u32, u32), blur_enabled: bool) -> Self {
+    pub(crate) fn new(selection: &Selection, window_size: (u32, u32), blur_enabled: bool) -> Self {
         let (window_width, window_height) = (window_size.0 as f32, window_size.1 as f32);
         let pos_bounds = selection.bounds.to_positive_size();
         let (selection_x, selection_y, selection_width, selection_height) = (
@@ -41,27 +23,64 @@ impl Locals {
         );
 
         Self {
-            x:      selection_x / window_width,
-            y:      selection_y / window_height,
-            width:  selection_width / window_width,
-            height: selection_height / window_height,
-            blur_enabled: if blur_enabled { 1 } else { 0 }
+            blur_enabled: if blur_enabled { 1 } else { 0 },
+            // Temporary, until we get polygon logic working for the actual selection
+            polygon: Polygon {
+                vertices: vec![
+                    Vertex::new( // Bottom left
+                        selection_x / window_width,
+                        selection_y / window_height,
+                    ),
+                    Vertex::new( // Bottom right
+                        (selection_x + selection_width) / window_width,
+                        selection_y / window_height,
+                    ),
+                    Vertex::new( // Top left
+                        selection_x / window_width,
+                        (selection_y + selection_height) / window_height,
+                    ),
+                    Vertex::new( // Top right
+                        (selection_x + selection_width) / window_width,
+                        (selection_y + selection_height) / window_height,
+                    )
+                ]
+            }
         }
     }
 
-    #[allow(dead_code)] // It is actually used... not sure what the warning is about
-    pub(crate) fn to_bytes(&self) -> &[u8] {
-        bytemuck::bytes_of(self)
+    pub(crate) fn as_bytes(&self) -> Vec<u8> {
+        let blur_enabled_bytes = bytemuck::bytes_of(&self.blur_enabled);
+
+        let vertex_count = self.polygon.vertices.len() as u32;
+        let vertex_count_bytes = bytemuck::bytes_of(&vertex_count);
+
+        let polygon_bytes = bytemuck::try_cast_slice(&self.polygon.vertices);
+        if polygon_bytes.is_err() {
+            eprintln!("Failed to cast polygon vertices to bytes");
+            return vec![];
+        }
+        
+        let polygon_bytes = polygon_bytes.unwrap();
+        let mut bytes = Vec::with_capacity(blur_enabled_bytes.len() + vertex_count_bytes.len() + polygon_bytes.len());
+        bytes.extend_from_slice(blur_enabled_bytes);
+        bytes.extend_from_slice(vertex_count_bytes);
+        bytes.extend_from_slice(&polygon_bytes);
+
+        bytes
     }
 }
 
 impl Default for Locals {
     fn default() -> Self {
         Self {
-            x: 0.25,
-            y: 0.25,
-            width: 0.5,
-            height: 0.5,
+            polygon: Polygon {
+                vertices: vec![
+                    Vertex::new(0.0, 0.0),
+                    Vertex::new(1.0, 0.0),
+                    Vertex::new(0.0, 1.0),
+                    Vertex::new(1.0, 1.0),
+                ]
+            },
             blur_enabled: 0
         }
     }
@@ -94,7 +113,7 @@ impl BackgroundRenderer {
 
         // Create a texture sampler with nearest neighbor
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Renderer sampler"),
+            label: Some("Background renderer sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -118,7 +137,7 @@ impl BackgroundRenderer {
         ];
         let vertex_data_slice = bytemuck::cast_slice(&vertex_data);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Renderer vertex buffer"),
+            label: Some("Background renderer vertex buffer"),
             contents: vertex_data_slice,
             usage: wgpu::BufferUsages::VERTEX,
         });
@@ -134,9 +153,9 @@ impl BackgroundRenderer {
 
         // Create uniform buffer
         let locals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Renderer u_Locals"),
-            contents: bytemuck::bytes_of(&Locals::default()),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            label: Some("Background renderer u_Locals"),
+            contents: &Locals::default().as_bytes(),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         });
 
         // Create bind group
@@ -163,7 +182,7 @@ impl BackgroundRenderer {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Locals>() as u64),
                     },
@@ -181,12 +200,12 @@ impl BackgroundRenderer {
 
         // Create pipeline
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Renderer pipeline layout"),
+            label: Some("Background renderer pipeline layout"),
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Renderer pipeline"),
+            label: Some("Background renderer pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &module,
@@ -284,12 +303,12 @@ impl BackgroundRenderer {
         &mut self,
         queue: &wgpu::Queue,
         window_size: (u32, u32),
-        selection: Selection,
+        selection: &Selection,
         icon_context: &IconContext,
     ) {
         let locals = Locals::new(selection, window_size, icon_context.settings.background_blur_enabled);
 
-        queue.write_buffer(&self.locals_buffer, 0, locals.to_bytes());
+        queue.write_buffer(&self.locals_buffer, 0, &locals.as_bytes());
     }
 }
 

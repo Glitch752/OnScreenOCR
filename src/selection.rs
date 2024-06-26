@@ -188,6 +188,12 @@ pub struct Vertex {
     pub y: f32
 }
 
+impl Vertex {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
 impl Polygon {
     pub fn new() -> Self {
         Self {
