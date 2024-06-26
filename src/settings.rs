@@ -63,6 +63,11 @@ impl Default for TesseractSettings {
 impl TesseractSettings {
     fn save(&self) {
         let encoded = toml::to_string(&self).unwrap();
+        // Not a perfect solution, but the comment isn't a huge deal
+        let encoded = encoded.replace("[tesseract_parameters]", r#"# Each entry should be a value for a parameter.
+# There are some useful parameters here: https://tesseract-ocr.github.io/tessdoc/tess3/ControlParams.html
+# This is a (old) list of all parameters: http://www.sk-spell.sk.cx/tesseract-ocr-parameters-in-302-version
+[tesseract_parameters]"#);
         std::fs::write(TESSERACT_SETTNGS_PATH, encoded).unwrap();
     }
 
@@ -78,8 +83,23 @@ impl TesseractSettings {
         self.ocr_language_code = OCR_LANGUAGES[(OCR_LANGUAGES.iter().position(|&x| x.code == self.ocr_language_code).unwrap() + OCR_LANGUAGES.len() - 1) % OCR_LANGUAGES.len()].code.to_string();
     }
 
-    fn get_parameters_cstr(&self) -> Vec<(&core::ffi::CStr, &core::ffi::CStr)> {
-        todo!()
+    pub fn configure_tesseract(&self, api: &mut leptess::tesseract::TessApi) {
+        for (k, v) in &self.tesseract_parameters {
+            let k = std::ffi::CString::new(k.to_string()).unwrap();
+            let value_string = match v {
+                toml::Value::String(s) => s.clone(),
+                toml::Value::Integer(i) => i.to_string(),
+                toml::Value::Float(f) => f.to_string(),
+                _ => continue
+            };
+            let v = std::ffi::CString::new(value_string).unwrap();
+
+            let result = api.raw.set_variable(&k, &v);
+            if result.is_err() {
+                // Ignore, but warn the user
+                eprintln!("Failed to set Tesseract variable: {:?}", result);
+            }
+        }
     }
 }
 

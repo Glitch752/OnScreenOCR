@@ -40,11 +40,7 @@ struct InitData {
 
 fn configure_tesseract(tesseract_settings: TesseractSettings) -> leptess::tesseract::TessApi {
     let mut tess_api = leptess::tesseract::TessApi::new(Some("./tessdata"), &tesseract_settings.ocr_language_code).expect("Unable to create Tesseract instance");
-    // tess_api.raw.set_variable(
-    // lt.set_rectangle(10, 10, 200, 60);
-    // TODO: Set parameters from tesseract_settings.tesseract_parameters
-    tess_api.set_source_resolution(70); // Doesn't matter to us -- just suppress the warning
-
+    tesseract_settings.configure_tesseract(&mut tess_api);
     tess_api
 }
 
@@ -61,17 +57,20 @@ impl OCRHandler {
                     }
                     OCREvent::SettingsUpdated(tesseract_settings, bounds) => {
                         init_data.tess_api = configure_tesseract(tesseract_settings);
+                        let img = leptess::leptonica::pix_read(std::path::Path::new(LATEST_SCREENSHOT_PATH)).expect("Unable to read image");
+                        init_data.tess_api.set_image(&img);
                         perform_ocr(bounds, init_data);
                     }
                     OCREvent::ScreenshotChanged(screenshot) => {
-                        // Leptonica requires a tiff-encoded image, and doesn't accept a normal image buffer
-                        let mut tiff_vector = Vec::new();
-                        let tiff_encoder = image::codecs::tiff::TiffEncoder::new(std::io::Cursor::new(&mut tiff_vector));
+                        init_data.tess_api.raw.set_image(
+                            &screenshot.bytes,
+                            screenshot.width as i32,
+                            screenshot.height as i32,
+                            4,
+                            4 * screenshot.width as i32
+                        ).expect("Unable to set image");
                         init_data.screenshot_size = (screenshot.width as u32, screenshot.height as u32);
-                        tiff_encoder.encode(&screenshot.bytes, screenshot.width as u32, screenshot.height as u32, image::ExtendedColorType::Rgba8).expect("Unable to encode image");
-                        let tiff_encoded_data = tiff_vector.as_slice();
-                        let pix = leptess::leptonica::pix_read_mem(tiff_encoded_data).expect("Unable to read image");
-                        init_data.tess_api.set_image(&pix);
+                        init_data.tess_api.set_source_resolution(70); // Doesn't matter to us -- just suppress the warning
 
                         // Also save screenshot as latest.png for screenshot functionality and debugging
                         let screenshot_image = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_vec(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).expect("Unable to create image buffer");
@@ -145,7 +144,7 @@ fn perform_ocr(bounds: Bounds, init_data: &mut InitData) {
     tesseract_api.set_rectangle(pos_bounds.x, pos_bounds.y, pos_bounds.width, pos_bounds.height);
     tesseract_api.recognize();
 
-    let text = tesseract_api.get_utf8_text().unwrap();
+    let text = tesseract_api.get_utf8_text().unwrap_or("".to_string());
     init_data.tx.send(text).expect("Unable to send text");
 }
 
