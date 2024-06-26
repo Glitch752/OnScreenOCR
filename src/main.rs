@@ -171,6 +171,32 @@ impl App {
                 IconEvent::UpdateOCRFormatOption => {
                     self.ocr_handler.format_option_changed(FormatOptions::from_settings(&self.icon_context.settings));
                 }
+                IconEvent::OpenOCRConfiguration => {
+                    #[cfg(windows)]
+                    {
+                        let _ = std::process::Command::new("notepad")
+                            .arg(self.icon_context.settings.tesseract_settings.absolute_path())
+                            .spawn();
+                    }
+                    
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = std::process::Command::new("xdg-open")
+                            .arg(self.icon_context.settings.tesseract_settings.absolute_path())
+                            .spawn();
+                    }
+
+                    #[cfg(not(any(windows, target_os = "linux")))]
+                    {
+                        eprintln!("Opening the OCR configuration is not supported on this platform");
+                    }
+
+                    self.hide_window();
+                }
+                IconEvent::RefreshOCRConfiguration => {
+                    self.icon_context.settings.tesseract_settings.reload();
+                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
+                }
             }
         }
     }

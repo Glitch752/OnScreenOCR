@@ -71,6 +71,28 @@ impl TesseractSettings {
         std::fs::write(TESSERACT_SETTNGS_PATH, encoded).unwrap();
     }
 
+    pub fn absolute_path(&self) -> String {
+        std::fs::canonicalize(TESSERACT_SETTNGS_PATH).unwrap().to_string_lossy().to_string()
+    }
+
+    pub fn reload(&mut self) {
+        if let Ok(encoded) = std::fs::read(TESSERACT_SETTNGS_PATH) {
+            let toml_string = String::from_utf8(encoded);
+            if toml_string.is_err() {
+                eprintln!("Failed to decode Tesseract setting string, using default settings and overwriting the file");
+                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                *self = TesseractSettings::default();
+                return;
+            }
+
+            *self = toml::from_str(&toml_string.unwrap()).unwrap_or_else(|_| {
+                eprintln!("Failed to deserialize Tesseract settings, using default settings and overwriting the file");
+                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                TesseractSettings::default()
+            });
+        }
+    }
+
     pub fn get_ocr_language_data(&self) -> OCRLanguage {
         OCR_LANGUAGES.iter().find(|x| x.code == self.ocr_language_code).unwrap().clone()
     }

@@ -10,7 +10,10 @@ pub enum IconEvent {
     Close,
     ActiveOCRLeft,
     ActiveOCRRight,
-    UpdateOCRFormatOption
+    UpdateOCRFormatOption,
+
+    RefreshOCRConfiguration,
+    OpenOCRConfiguration
 }
 
 pub fn get_icon_layouts() -> IconLayouts {
@@ -96,6 +99,24 @@ pub fn get_icon_layouts() -> IconLayouts {
     horizontal_setting_layout!("Add pilcrows to preview (4)", "return", add_pilcrow_in_preview);
     horizontal_setting_layout!("Close on copy (5)", "auto-close", close_on_copy);
     horizontal_setting_layout!("Auto copy when selecting (6)", "auto-copy", auto_copy);
+
+    settings_layout.add_layout({
+        let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
+        layout.add_text(IconText::new("Manual OCR configuration".to_string()));
+        layout.add_icon({
+            let mut icon = create_icon!("open", IconBehavior::Click);
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::OpenOCRConfiguration).expect("Unable to send open OCR configuration event"); }));
+            icon.tooltip_text = Some("Open Tesseract configuration file".to_string());
+            icon
+        });
+        layout.add_icon({
+            let mut icon = create_icon!("refresh", IconBehavior::Click);
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::RefreshOCRConfiguration).expect("Unable to send refresh OCR configuration event"); }));
+            icon.tooltip_text = Some("Refresh Tesseract configuration".to_string());
+            icon
+        });
+        layout
+    });
 
     settings_layout.add_layout({
         let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
