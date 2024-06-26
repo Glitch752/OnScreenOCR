@@ -529,7 +529,7 @@ impl ApplicationHandler for App {
                     let was_handled = window_state.shader_renderer.mouse_event((x, y), state, &mut self.icon_context);
 
                     if !was_handled {
-                        if self.selection.mouse_input(state, button, self.relative_mouse_pos, self.size, &mut self.icon_context) {
+                        if self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context) {
                             self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                         }
                     }
@@ -548,7 +548,7 @@ impl ApplicationHandler for App {
                 }
 
                 self.relative_mouse_pos = (position.x as i32, position.y as i32);
-                let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size, &self.icon_context);
+                let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size);
 
                 if changed {
                     self.window_state.as_ref().unwrap().window.request_redraw();

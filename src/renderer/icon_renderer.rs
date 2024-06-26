@@ -2,7 +2,7 @@ use std::sync::mpsc;
 
 use glyph_brush::{ab_glyph::FontRef, OwnedSection, OwnedText};
 use icon_layout::get_icon_layouts;
-use pixels::{wgpu::{self, util::DeviceExt, Device, Queue}, Pixels};
+use pixels::{wgpu::{self, util::DeviceExt, Device, Queue}, Pixels, PixelsContext};
 use winit::event::ElementState;
 
 use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::{BrushBuilder, Matrix, TextBrush}};
@@ -477,13 +477,15 @@ impl IconRenderer {
 
     pub fn update(
         &mut self,
-        device: &Device,
-        queue: &Queue,
+        context: &PixelsContext,
         delta: std::time::Duration,
         mouse_pos: (i32, i32),
         icon_context: &IconContext
     ) {
         self.icons.recalculate_positions(self.current_screen_size);
+
+        let device = &context.device;
+        let queue = &context.queue;
 
         let hover_state = self.icons.update_all(mouse_pos, delta, icon_context);
         if let Some(mut state) = hover_state {
@@ -629,7 +631,7 @@ impl Icon {
 
         self.anim.update(delta, self.visible);
 
-        if mouse_over && self.tooltip_text.is_some() {
+        if mouse_over && self.tooltip_text.is_some() && self.anim.fully_visible() {
             Some(TooltipState::new(self.bounds, self.tooltip_text.clone().unwrap(), self.disabled))
         } else {
             None

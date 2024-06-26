@@ -1,4 +1,4 @@
-use pixels::{check_texture_size, wgpu::{self, util::DeviceExt}, TextureError};
+use pixels::{check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError};
 
 use crate::{screenshot::Screenshot, selection::{Polygon, Selection, Vertex}};
 
@@ -14,37 +14,10 @@ pub(crate) struct Locals {
 impl Locals {
     pub(crate) fn new(selection: &Selection, window_size: (u32, u32), blur_enabled: bool) -> Self {
         let (window_width, window_height) = (window_size.0 as f32, window_size.1 as f32);
-        let pos_bounds = selection.bounds.to_positive_size();
-        let (selection_x, selection_y, selection_width, selection_height) = (
-            pos_bounds.x as f32,
-            pos_bounds.y as f32,
-            pos_bounds.width as f32,
-            pos_bounds.height as f32
-        );
-
         Self {
             blur_enabled: if blur_enabled { 1 } else { 0 },
             // Temporary, until we get polygon logic working for the actual selection
-            polygon: Polygon {
-                vertices: vec![
-                    Vertex::new( // Bottom left
-                        selection_x / window_width,
-                        selection_y / window_height,
-                    ),
-                    Vertex::new( // Bottom right
-                        (selection_x + selection_width) / window_width,
-                        selection_y / window_height,
-                    ),
-                    Vertex::new( // Top right
-                        (selection_x + selection_width) / window_width,
-                        (selection_y + selection_height) / window_height,
-                    ),
-                    Vertex::new( // Top left
-                        selection_x / window_width,
-                        (selection_y + selection_height) / window_height,
-                    ),
-                ]
-            }
+            polygon: selection.get_device_coords_polygon(window_width, window_height)
         }
     }
 
@@ -301,14 +274,41 @@ impl BackgroundRenderer {
 
     pub(crate) fn update(
         &mut self,
-        queue: &wgpu::Queue,
+        context: &PixelsContext,
         window_size: (u32, u32),
         selection: &Selection,
         icon_context: &IconContext,
     ) {
         let locals = Locals::new(selection, window_size, icon_context.settings.background_blur_enabled);
 
-        queue.write_buffer(&self.locals_buffer, 0, &locals.as_bytes());
+        let device = &context.device;
+        let queue = &context.queue;
+
+        let local_data = locals.as_bytes();
+        let current_locals_size = self.locals_buffer.size();
+        if local_data.len() > current_locals_size as usize {
+            // Resize the locals buffer
+            self.locals_buffer.destroy();
+            self.locals_buffer = {
+                let unpadded_size = current_locals_size * 2;
+                let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Background renderer locals buffer"),
+                    // Properly align the buffer
+                    size: (unpadded_size + (wgpu::COPY_BUFFER_ALIGNMENT - 1)) & !(wgpu::COPY_BUFFER_ALIGNMENT - 1),
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false
+                });
+                buffer
+            };
+            self.bind_group = create_bind_group(
+                device,
+                &self.bg_bind_group_layout,
+                &self.texture_view,
+                &self.sampler,
+                &self.locals_buffer,
+            );
+        }
+        queue.write_buffer(&self.locals_buffer, 0, &local_data);
     }
 }
 
