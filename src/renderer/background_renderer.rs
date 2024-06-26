@@ -35,14 +35,14 @@ impl Locals {
                         (selection_x + selection_width) / window_width,
                         selection_y / window_height,
                     ),
+                    Vertex::new( // Top right
+                        (selection_x + selection_width) / window_width,
+                        (selection_y + selection_height) / window_height,
+                    ),
                     Vertex::new( // Top left
                         selection_x / window_width,
                         (selection_y + selection_height) / window_height,
                     ),
-                    Vertex::new( // Top right
-                        (selection_x + selection_width) / window_width,
-                        (selection_y + selection_height) / window_height,
-                    )
                 ]
             }
         }
@@ -59,7 +59,7 @@ impl Locals {
             eprintln!("Failed to cast polygon vertices to bytes");
             return vec![];
         }
-        
+
         let polygon_bytes = polygon_bytes.unwrap();
         let mut bytes = Vec::with_capacity(blur_enabled_bytes.len() + vertex_count_bytes.len() + polygon_bytes.len());
         bytes.extend_from_slice(blur_enabled_bytes);
@@ -77,8 +77,8 @@ impl Default for Locals {
                 vertices: vec![
                     Vertex::new(0.0, 0.0),
                     Vertex::new(1.0, 0.0),
-                    Vertex::new(0.0, 1.0),
                     Vertex::new(1.0, 1.0),
+                    Vertex::new(0.0, 1.0),
                 ]
             },
             blur_enabled: 0

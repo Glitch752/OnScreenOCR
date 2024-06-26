@@ -35,8 +35,9 @@ const BLUR_RADIUS = 2.0;
 const BLUR_ITERATIONS = 2.0;
 const OUT_OF_BOX_TINT = vec3<f32>(0.4, 0.4, 0.42);
 
-const BORDER_WIDTH = 5.0;
-const BORDER_COLOR = vec3<f32>(0.482, 0.412, 0.745);
+const BORDER_WIDTH = 1.0;
+const BORDER_INNER_COLOR = vec4<f32>(0.482, 0.412, 0.745, 1.0);
+const BORDER_OUTER_COLOR = vec4<f32>(0.482, 0.412, 0.745, 0.0);
 
 // Reference: https://www.shadertoy.com/view/wdBXRW
 fn polygon_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> f32 {
@@ -49,8 +50,8 @@ fn polygon_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> f3
     var s: f32 = 1.0;
 
     var num = i32(r_locals.vertex_count);
+    var last: vec2<f32> = r_locals.vertices[num - 1].position * screen_dimensions;
     for(var i = 0; i < num; i += 1) {
-        var last: vec2<f32> = r_locals.vertices[i - 1].position * screen_dimensions;
         var current: vec2<f32> = r_locals.vertices[i].position * screen_dimensions;
 
         // Distance
@@ -69,6 +70,8 @@ fn polygon_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> f3
         if(all(conditions) || !any(conditions)) {
             s = -s;
         }
+
+        last = current;
     }
     
     return s * sqrt(d);
@@ -110,6 +113,30 @@ fn get_blurred_color_iteration(
     return color / weight;
 }
 
+fn alpha_mix(color: vec3<f32>, overlay_color: vec4<f32>) -> vec3<f32> {
+    return color * overlay_color.a + overlay_color.rgb * (1.0 - overlay_color.a);
+}
+
+fn color_at_position(tex_coord: vec2<f32>, screen_dimensions: vec2<f32>, in_box_color: vec3<f32>, out_of_box_color: vec3<f32>) -> vec3<f32> {
+    var in_box: f32 = 0.0;
+    var distance = polygon_signed_distance(tex_coord, screen_dimensions);
+    if(distance < 0.0) {
+        in_box = 1.0;
+    }
+    return mix(
+        // Color for outside the main selection
+        alpha_mix(
+            // Background color
+            out_of_box_color * OUT_OF_BOX_TINT,
+            // Border color
+            mix(BORDER_OUTER_COLOR, BORDER_INNER_COLOR, min(distance / BORDER_WIDTH, 1.))
+        ),
+        // Color for inside the main selection
+        in_box_color,
+        in_box
+    );
+}
+
 @fragment
 fn fs_main(
     @location(0) tex_coord: vec2<f32>
@@ -123,21 +150,9 @@ fn fs_main(
     } else {
         out_of_box_color = textureSample(r_tex_color, r_tex_sampler, tex_coord).rgb;
     }
-
-    // Branching is bad, but this is 2 constants so it should be optimized out
-    // It's also not like we care about performance _that_ much
-    var in_border: f32 = 0.0;
-    var in_box: f32 = 0.0;
     
-    var distance = polygon_signed_distance(tex_coord, screen_dimensions);
-    if(distance < 0.0) {
-        in_box = 1.0;
-    }
-    if(distance < BORDER_WIDTH) {
-        in_border = 1.0;
-    }
-
-    let in_border_color = mix(BORDER_COLOR, in_box_color, in_box);
-
-    return vec4<f32>(mix(out_of_box_color * OUT_OF_BOX_TINT, in_border_color, in_border), 1.0);
+    return vec4<f32>(
+        color_at_position(tex_coord, screen_dimensions, in_box_color, out_of_box_color),
+        1.0
+    );
 }
