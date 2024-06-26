@@ -4,12 +4,10 @@
 use clipboard::{ClipboardContext, ClipboardProvider};
 use clipboard_image::copy_image_to_clipboard;
 use inputbot::{KeybdKey::*, MouseCursor};
-use ocr_handler::OCRHandler;
+use ocr_handler::{OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::screenshot_from_handle;
 use selection::Selection;
-use std::fs::File;
-use std::io::BufReader;
 use std::sync::mpsc;
 use std::thread;
 use winit::application::ApplicationHandler;
@@ -163,12 +161,12 @@ impl App {
                     self.attempt_screenshot();
                 }
                 IconEvent::ActiveOCRLeft => {
-                    self.icon_context.settings.ocr_language_decrement();
-                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.ocr_language_code.clone());
+                    self.icon_context.settings.tesseract_settings.ocr_language_decrement();
+                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
                 }
                 IconEvent::ActiveOCRRight => {
-                    self.icon_context.settings.ocr_language_increment();
-                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.ocr_language_code.clone());
+                    self.icon_context.settings.tesseract_settings.ocr_language_increment();
+                    self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
                 }
             }
         }
@@ -192,7 +190,7 @@ impl App {
         if self.selection.bounds.width == 0 || self.selection.bounds.height == 0 {
             return;
         }
-        if !std::fs::try_exists("cropped.png").unwrap_or(false) {
+        if !std::fs::try_exists(LATEST_SCREENSHOT_PATH).unwrap_or(false) {
             return;
         }
 
@@ -201,21 +199,29 @@ impl App {
             return;
         }
         
-        let screenshot = self.
-
-        if pos_bounds.x + pos_bounds.width > screenshot.width as i32 {
-            pos_bounds.width = screenshot.width as i32 - pos_bounds.x;
-        }
-        if pos_bounds.y + pos_bounds.height > screenshot.height as i32 {
-            pos_bounds.height = screenshot.height as i32 - pos_bounds.y;
-        }
-
-        // Crop the screenshot
+        // Load from LATEST_SCREENSHOT_PATH and crop
+        let img = image::open(LATEST_SCREENSHOT_PATH);
         if img.is_err() {
             eprintln!("Error loading image: {:?}", img);
             return;
         }
-        copy_image_to_clipboard(&img.unwrap());
+        let mut img = img.unwrap();
+        
+        if pos_bounds.x + pos_bounds.width > img.width() as i32 {
+            pos_bounds.width = img.width() as i32 - pos_bounds.x;
+        }
+        if pos_bounds.y + pos_bounds.height > img.height() as i32 {
+            pos_bounds.height = img.height() as i32 - pos_bounds.y;
+        }
+
+        img.crop(
+            pos_bounds.x as u32,
+            pos_bounds.y as u32,
+            pos_bounds.width as u32,
+            pos_bounds.height as u32,
+        );
+
+        copy_image_to_clipboard(&img);
         
         if self.icon_context.settings.close_on_copy {
             self.hide_window();
@@ -275,7 +281,6 @@ impl ApplicationHandler for App {
 
             let builder = PixelsBuilder::new(width, height, surface_texture);
             let builder = builder.clear_color(pixels::wgpu::Color::WHITE);
-            let builder = builder.render_texture_format(pixels::wgpu::TextureFormat::Rgba8UnormSrgb);
             let pixels = builder.build().expect("Unable to create pixels");
 
             let shader_renderer = renderer::Renderer::new(&pixels, width, height, screenshot.bytes.as_slice())

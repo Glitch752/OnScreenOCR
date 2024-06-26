@@ -378,7 +378,7 @@ impl IconRenderer {
                 module: &module,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                    format: pixels.render_texture_format(),
                     blend: Some(wgpu::BlendState {
                         // result = operation((src * srcFactor),  (dst * dstFactor))
                         // Where src is value from fragment shader and dst is value already in the texture

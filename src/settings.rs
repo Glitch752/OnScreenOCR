@@ -55,11 +55,8 @@ impl Default for TesseractSettings {
 
         Self {
             ocr_language_code: DEFAULT_OCR_LANGUAGE.code.to_string(),
+            tesseract_parameters: toml::Table::new()
         }
-    }
-
-    fn get_parameters_cstr(&self) -> Vec<(&Cstr, &Cstr)> {
-        
     }
 }
 
@@ -79,6 +76,10 @@ impl TesseractSettings {
 
     pub fn ocr_language_decrement(&mut self) {
         self.ocr_language_code = OCR_LANGUAGES[(OCR_LANGUAGES.iter().position(|&x| x.code == self.ocr_language_code).unwrap() + OCR_LANGUAGES.len() - 1) % OCR_LANGUAGES.len()].code.to_string();
+    }
+
+    fn get_parameters_cstr(&self) -> Vec<(&core::ffi::CStr, &core::ffi::CStr)> {
+        todo!()
     }
 }
 
@@ -114,6 +115,8 @@ impl SettingsManager {
     pub fn save(&self) {
         let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
         std::fs::write(SETTINGS_PATH, encoded).unwrap();
+
+        self.tesseract_settings.save();
     }
 
     pub fn get_ocr_languages(&self) -> Vec<OCRLanguage> {

@@ -1,23 +1,25 @@
-use std::{sync::{mpsc, Arc, LazyLock, Mutex}, time::{Duration, Instant}};
+use std::{sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
 use crate::{screenshot::Screenshot, selection::{Bounds, Selection}, settings::TesseractSettings};
 
-const DEBOUNE_TIME: Duration = Duration::from_millis(50);
+pub static LATEST_SCREENSHOT_PATH: &str = "latest.png";
 
-pub static CURRENT_SCREENSOT: LazyLock<Mutex<Box<Option<Screenshot>>>> = LazyLock::new(|| Mutex::new(Box::new(None)));
+const DEBOUNE_TIME: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone)]
 pub(crate) enum OCREvent {
     SelectionChanged(Bounds),
-    SettingsUpdated(TesseractSettings)
+    SettingsUpdated(TesseractSettings, Bounds),
+    ScreenshotChanged(Screenshot)
 }
 
 impl PartialEq for OCREvent {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (OCREvent::SelectionChanged(_), OCREvent::SelectionChanged(_)) => true,
-            (OCREvent::SettingsUpdated(_), OCREvent::SettingsUpdated(_)) => true,
+            (OCREvent::SettingsUpdated(_, _), OCREvent::SettingsUpdated(_, _)) => true,
+            (OCREvent::ScreenshotChanged(_), OCREvent::ScreenshotChanged(_)) => true,
             _ => false
         }
     }
@@ -33,12 +35,17 @@ pub(crate) struct OCRHandler {
 struct InitData {
     tx: mpsc::Sender<String>,
     tess_api: leptess::tesseract::TessApi,
+    screenshot_size: (u32, u32)
 }
 
 fn configure_tesseract(tesseract_settings: TesseractSettings) -> leptess::tesseract::TessApi {
     let mut tess_api = leptess::tesseract::TessApi::new(Some("./tessdata"), &tesseract_settings.ocr_language_code).expect("Unable to create Tesseract instance");
     // tess_api.raw.set_variable(
     // lt.set_rectangle(10, 10, 200, 60);
+    // TODO: Set parameters from tesseract_settings.tesseract_parameters
+    tess_api.set_source_resolution(70); // Doesn't matter to us -- just suppress the warning
+
+    tess_api
 }
 
 impl OCRHandler {
@@ -50,19 +57,32 @@ impl OCRHandler {
                 DEBOUNE_TIME,
                 move |event, init_data| match event {
                     OCREvent::SelectionChanged(bounds) => {
-                        perform_ocr(bounds, &mut init_data.tess_api, &init_data.tx);
+                        perform_ocr(bounds, init_data);
                     }
-                    OCREvent::SettingsUpdated(tesseract_settings) => {
+                    OCREvent::SettingsUpdated(tesseract_settings, bounds) => {
                         init_data.tess_api = configure_tesseract(tesseract_settings);
+                        perform_ocr(bounds, init_data);
                     }
-                    OCREvent::ScreenshotChanged() => {
-                        init_data.tess_api.set_image()
+                    OCREvent::ScreenshotChanged(screenshot) => {
+                        // Leptonica requires a tiff-encoded image, and doesn't accept a normal image buffer
+                        let mut tiff_vector = Vec::new();
+                        let tiff_encoder = image::codecs::tiff::TiffEncoder::new(std::io::Cursor::new(&mut tiff_vector));
+                        init_data.screenshot_size = (screenshot.width as u32, screenshot.height as u32);
+                        tiff_encoder.encode(&screenshot.bytes, screenshot.width as u32, screenshot.height as u32, image::ExtendedColorType::Rgba8).expect("Unable to encode image");
+                        let tiff_encoded_data = tiff_vector.as_slice();
+                        let pix = leptess::leptonica::pix_read_mem(tiff_encoded_data).expect("Unable to read image");
+                        init_data.tess_api.set_image(&pix);
+
+                        // Also save screenshot as latest.png for screenshot functionality and debugging
+                        let screenshot_image = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_vec(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).expect("Unable to create image buffer");
+                        screenshot_image.save(LATEST_SCREENSHOT_PATH).expect("Unable to save latest.png");
                     }
                 },
                 || {
                     InitData {
                         tess_api: configure_tesseract(tesseract_settings),
-                        tx
+                        tx,
+                        screenshot_size: (0, 0)
                     }
                 },
             ),
@@ -73,8 +93,7 @@ impl OCRHandler {
     }
 
     pub fn set_screenshot(&mut self, screenshot: Screenshot) {
-        let mut current_screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot");
-        *current_screenshot = Box::new(Some(screenshot));
+        self.throttler.put(OCREvent::ScreenshotChanged(screenshot));
     }
 
     pub fn before_reopen_window(&mut self) {
@@ -105,36 +124,29 @@ impl OCRHandler {
     }
 
     pub fn update_ocr_settings(&mut self, settings: TesseractSettings) {
-        self.throttler.put(OCREvent::SettingsUpdated(settings));
-        self.throttler.put(OCREvent::SelectionChanged(self.last_selection_bounds.clone().unwrap()));
+        self.throttler.put(OCREvent::SettingsUpdated(settings, self.last_selection_bounds.unwrap_or_default()));
     }
 }
 
-fn perform_ocr(bounds: Bounds, tsseract_api: &mut leptess::tesseract::TessApi, tx: &mpsc::Sender<String>) {
+fn perform_ocr(bounds: Bounds, init_data: &mut InitData) {
     let mut pos_bounds = bounds.to_positive_size();
     if pos_bounds.width < 5 || pos_bounds.height < 5 {
         return;
     }
-
-    // Get the current screenshot
-    let screenshot = CURRENT_SCREENSOT.lock().expect("Couldn't unlock screenshot").clone().expect("No screenshot available");
     
-    if pos_bounds.x + pos_bounds.width > screenshot.width as i32 {
-        pos_bounds.width = screenshot.width as i32 - pos_bounds.x;
+    if pos_bounds.x + pos_bounds.width > init_data.screenshot_size.0 as i32 {
+        pos_bounds.width = init_data.screenshot_size.0 as i32 - pos_bounds.x;
     }
-    if pos_bounds.y + pos_bounds.height > screenshot.height as i32 {
-        pos_bounds.height = screenshot.height as i32 - pos_bounds.y;
+    if pos_bounds.y + pos_bounds.height > init_data.screenshot_size.1 as i32 {
+        pos_bounds.height = init_data.screenshot_size.1 as i32 - pos_bounds.y;
     }
 
+    let tesseract_api = &mut init_data.tess_api;
+    tesseract_api.set_rectangle(pos_bounds.x, pos_bounds.y, pos_bounds.width, pos_bounds.height);
+    tesseract_api.recognize();
 
-    // Export to a png and save it under the current directory
-    cropped_image.save("cropped.png").unwrap();
-
-    tsseract_api.set_image("cropped.png").expect("Unable to set image");
-    tsseract_api.recognize();
-
-    let text = tsseract_api.get_utf8_text().unwrap();
-    tx.send(text).expect("Unable to send text");
+    let text = tesseract_api.get_utf8_text().unwrap();
+    init_data.tx.send(text).expect("Unable to send text");
 }
 
 enum State<Type> {

@@ -93,7 +93,7 @@ pub fn get_icon_layouts() -> IconLayouts {
         });
         layout.add_text({
             let mut text = IconText::new("_______________________________________________________".to_string()); // Plenty of characters to make the text allocate enough background tiles
-            text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Current OCR: {}", ctx.settings.get_ocr_language_data().name) }));
+            text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Current OCR: {}", ctx.settings.tesseract_settings.get_ocr_language_data().name) }));
             text
         });
         layout.add_icon({
