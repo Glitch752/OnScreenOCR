@@ -1,6 +1,6 @@
 use winit::monitor::MonitorHandle;
 
-use crate::selection::Polygon;
+use crate::selection::Bounds;
 
 extern crate libc;
 
@@ -22,21 +22,22 @@ pub(crate) fn screenshot_from_handle(monitor: MonitorHandle) -> Screenshot {
     }
 }
 
-pub(crate) fn crop_screenshot_to_polygon(polygon: &Polygon, screenshot: Screenshot) -> Screenshot {
-	let mut new_bytes = Vec::new();
+pub(crate) fn crop_screenshot_to_polygon(vertices: &Vec<(i32, i32)>, screenshot: &Screenshot) -> Screenshot {
+	let mut new_bytes: Vec<u8> = Vec::with_capacity(screenshot.width * screenshot.height * 4);
 	for y in 0..screenshot.height {
 		for x in 0..screenshot.width {
-			if polygon.contains_point((x as f32, y as f32)) {
+			if contains_point(&vertices, (x as i32, y as i32)) {
 				let idx = (y * screenshot.width + x) * 4;
 				new_bytes.push(screenshot.bytes[idx]);
 				new_bytes.push(screenshot.bytes[idx + 1]);
 				new_bytes.push(screenshot.bytes[idx + 2]);
 				new_bytes.push(screenshot.bytes[idx + 3]);
 			} else {
-				new_bytes.push(0);
-				new_bytes.push(0);
-				new_bytes.push(0);
-				new_bytes.push(0);
+				// Tesseract seems to work better with wite pixels instead of black
+				new_bytes.push(255);
+				new_bytes.push(255);
+				new_bytes.push(255);
+				new_bytes.push(255);
 			}
 		}
 	}
@@ -46,6 +47,46 @@ pub(crate) fn crop_screenshot_to_polygon(polygon: &Polygon, screenshot: Screensh
 		height: screenshot.height,
 		bytes: new_bytes
 	}
+}
+
+pub(crate) fn crop_screenshot_to_bounds(bounds: Bounds, screenshot: &Screenshot) -> Screenshot {
+	let bounds = bounds.to_positive_size();
+
+	assert!(bounds.x + bounds.width <= screenshot.width as i32);
+	assert!(bounds.y + bounds.height <= screenshot.height as i32);
+	assert!(bounds.x >= 0);
+	assert!(bounds.y >= 0);
+
+	let mut new_bytes: Vec<u8> = Vec::with_capacity(bounds.width as usize * bounds.height as usize  * 4);
+	for y in bounds.y..bounds.y+bounds.height {
+		for x in bounds.x..bounds.x+bounds.width {
+			let idx = (y as usize * screenshot.width + x as usize) * 4;
+			new_bytes.push(screenshot.bytes[idx]);
+			new_bytes.push(screenshot.bytes[idx + 1]);
+			new_bytes.push(screenshot.bytes[idx + 2]);
+			new_bytes.push(screenshot.bytes[idx + 3]);
+		}
+	}
+
+	Screenshot {
+		width: bounds.width as usize,
+		height: bounds.height as usize,
+		bytes: new_bytes
+	}
+}
+
+pub fn contains_point(vertices: &Vec<(i32, i32)>, point: (i32, i32)) -> bool {
+	let (x, y) = point;
+	let mut inside = false;
+	let vertex_count = vertices.len();
+	for i in 0..vertex_count {
+		let vertex1 = &vertices[i];
+		let vertex2 = &vertices[(i + 1) % vertex_count];
+		if (vertex1.1 > y) != (vertex2.1 > y) && x < (vertex2.0 - vertex1.0) * (y - vertex1.1) / (vertex2.1 - vertex1.1) + vertex1.0 {
+			inside = !inside;
+		}
+	}
+	inside
 }
 
 // Tweaked from https://github.com/alexchandel/screenshot-rs/blob/master/src/lib.rs, only with Windows APIs for now

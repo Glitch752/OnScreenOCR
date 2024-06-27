@@ -1,7 +1,7 @@
 use std::{sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
-use crate::{screenshot::{crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractSettings}};
+use crate::{screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractSettings}};
 
 pub static LATEST_SCREENSHOT_PATH: &str = "latest.png";
 
@@ -9,7 +9,7 @@ const DEBOUNE_TIME: Duration = Duration::from_millis(50);
 
 #[derive(Debug, Clone)]
 pub(crate) enum OCREvent {
-    SelectionChanged(Bounds),
+    SelectionChanged(OCRSelectionData),
     SettingsUpdated(TesseractSettings),
     ScreenshotChanged(Screenshot),
     FormatOptionChanged(FormatOptions),
@@ -52,10 +52,27 @@ struct InitData {
     tess_api: leptess::tesseract::TessApi,
     screenshot_size: (u32, u32),
     format_options: FormatOptions,
-    last_selection_bounds: Option<Bounds>, // Used to recalculate the same OCR when language changes
+    latest_selection: Option<OCRSelectionData>, // Used to recalculate the same OCR when language changes
     current_screenshot: Option<Screenshot>,
 
     hyphenated_word_list_cache: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OCRSelectionData {
+    bounds: Bounds,
+    polygon_vertices: Vec<(i32, i32)>,
+}
+
+impl OCRSelectionData {
+    pub fn from_selection(selection: &Selection) -> Self {
+        let bounds = selection.bounds.clone();
+        let polygon_vertices = selection.polygon.vertices.iter().map(|x| (x.x as i32, x.y as i32)).collect();
+        OCRSelectionData {
+            bounds,
+            polygon_vertices
+        }
+    }
 }
 
 fn configure_tesseract(tesseract_settings: TesseractSettings) -> leptess::tesseract::TessApi {
@@ -72,14 +89,37 @@ impl OCRHandler {
             throttler: OCRThrottler::new::<_, _, InitData>(
                 DEBOUNE_TIME,
                 move |event, init_data| match event {
-                    OCREvent::SelectionChanged(bounds) => {
-                        init_data.last_selection_bounds = Some(bounds);
-                        perform_ocr(bounds, init_data);
+                    OCREvent::SelectionChanged(selection) => {
+                        if init_data.current_screenshot.is_none() {
+                            return;
+                        }
+
+                        if selection.bounds.width == 0 || selection.bounds.height == 0 {
+                            return;
+                        }
+
+                        let cropped_screenshot = crop_screenshot_to_bounds(selection.bounds, init_data.current_screenshot.as_ref().unwrap());
+                        let cropped_screenshot = crop_screenshot_to_polygon(
+                            &selection.polygon_vertices.iter().map(|v| (v.0 - selection.bounds.x, v.1 - selection.bounds.y)).collect(),
+                            &cropped_screenshot
+                        );
+                        init_data.tess_api.raw.set_image(
+                            &cropped_screenshot.bytes,
+                            cropped_screenshot.width as i32,
+                            cropped_screenshot.height as i32,
+                            4,
+                            4 * cropped_screenshot.width as i32
+                        ).expect("Unable to set image");
+                        init_data.screenshot_size = (cropped_screenshot.width as u32, cropped_screenshot.height as u32);
+                        init_data.tess_api.set_source_resolution(70); // Doesn't matter to us -- just suppress the warning
+                        
+                        init_data.latest_selection = Some(selection);
+                        perform_ocr(init_data);
                     }
                     OCREvent::FormatOptionChanged(format_options) => {
                         init_data.format_options = format_options;
-                        if let Some(bounds) = init_data.last_selection_bounds {
-                            perform_ocr(bounds, init_data);
+                        if init_data.latest_selection.is_some() {
+                            perform_ocr(init_data);
                         }
                     }
                     OCREvent::SettingsUpdated(tesseract_settings) => {
@@ -88,25 +128,16 @@ impl OCRHandler {
                         init_data.tess_api = configure_tesseract(tesseract_settings);
                         let img = leptess::leptonica::pix_read(std::path::Path::new(LATEST_SCREENSHOT_PATH)).expect("Unable to read image");
                         init_data.tess_api.set_image(&img);
-                        if let Some(bounds) = init_data.last_selection_bounds {
-                            perform_ocr(bounds, init_data);
+                        if init_data.latest_selection.is_some() {
+                            perform_ocr(init_data);
                         }
                     }
                     OCREvent::ScreenshotChanged(screenshot) => {
-                        let screenshot = crop_screenshot_to_polygon(polygon, screenshot);
-                        init_data.tess_api.raw.set_image(
-                            &screenshot.bytes,
-                            screenshot.width as i32,
-                            screenshot.height as i32,
-                            4,
-                            4 * screenshot.width as i32
-                        ).expect("Unable to set image");
-                        init_data.screenshot_size = (screenshot.width as u32, screenshot.height as u32);
-                        init_data.tess_api.set_source_resolution(70); // Doesn't matter to us -- just suppress the warning
-
                         // Also save screenshot as latest.png for screenshot functionality and debugging
                         let screenshot_image = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_vec(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).expect("Unable to create image buffer");
                         screenshot_image.save(LATEST_SCREENSHOT_PATH).expect("Unable to save latest.png");
+                        
+                        init_data.current_screenshot = Some(screenshot);
                     }
                 },
                 move || {
@@ -116,8 +147,8 @@ impl OCRHandler {
                         tx,
                         screenshot_size: (0, 0),
                         format_options: initial_format_options,
-                        screenshot: None,
-                        last_selection_bounds: None
+                        current_screenshot: None,
+                        latest_selection: None
                     }
                 },
             ),
@@ -135,7 +166,8 @@ impl OCRHandler {
     }
 
     pub fn selection_changed(&mut self, latest_selection: &Selection) {
-        self.throttler.put(OCREvent::SelectionChanged(latest_selection.bounds.clone()));
+        let ocr_selection_data = OCRSelectionData::from_selection(latest_selection);
+        self.throttler.put(OCREvent::SelectionChanged(ocr_selection_data));
     }
 
     pub fn update_ocr_preview_text(&mut self) -> bool {
@@ -164,21 +196,8 @@ impl OCRHandler {
     }
 }
 
-fn perform_ocr(bounds: Bounds, init_data: &mut InitData) {
-    let mut pos_bounds = bounds.to_positive_size();
-    if pos_bounds.width < 5 || pos_bounds.height < 5 {
-        return;
-    }
-    
-    if pos_bounds.x + pos_bounds.width > init_data.screenshot_size.0 as i32 {
-        pos_bounds.width = init_data.screenshot_size.0 as i32 - pos_bounds.x;
-    }
-    if pos_bounds.y + pos_bounds.height > init_data.screenshot_size.1 as i32 {
-        pos_bounds.height = init_data.screenshot_size.1 as i32 - pos_bounds.y;
-    }
-
+fn perform_ocr(init_data: &mut InitData) {
     let tesseract_api = &mut init_data.tess_api;
-    tesseract_api.set_rectangle(pos_bounds.x, pos_bounds.y, pos_bounds.width, pos_bounds.height);
     tesseract_api.recognize();
 
     let mut text = tesseract_api.get_utf8_text().unwrap_or("".to_string());

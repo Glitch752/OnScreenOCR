@@ -539,6 +539,8 @@ impl ApplicationHandler for App {
                     if self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context) {
                         self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                     }
+                    self.window_state.as_ref().unwrap().window.request_redraw();
+                    self.ocr_handler.selection_changed(&self.selection);
                 }
 
                 self.window_state.as_ref().unwrap().window.request_redraw();

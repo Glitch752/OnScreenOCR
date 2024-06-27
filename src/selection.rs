@@ -270,7 +270,6 @@ impl Selection {
                 let (dx, dy) = (x - start_x, y - start_y);
                 self.polygon.set_origin(start_bounds_x + dx as f32, start_bounds_y + dy as f32);
                 self.polygon.clamp_to_screen(screen_size);
-                self.bounds.enclose_polygon(&self.polygon);
                 
                 if !self.shift_held {
                     self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
@@ -278,6 +277,8 @@ impl Selection {
                         start_origin: self.polygon.get_origin()
                     });
                 }
+                
+                self.bounds.enclose_polygon(&self.polygon);
             }
             DraggingEditState::ShiftPolygonEdge(ref edge) => {
                 let (start_x, start_y) = edge.start_location;
@@ -285,11 +286,12 @@ impl Selection {
                 let (dx, dy) = (x - start_x, y - start_y);
                 self.polygon.set_edge_origin(edge.edge_index, (start_bounds_x + dx as f32, start_bounds_y + dy as f32));
                 self.polygon.clamp_to_screen(screen_size);
-                self.bounds.enclose_polygon(&self.polygon);
                 
                 if !self.shift_held {
                     self.check_edge_split_input(x, y, edge.edge_index);
                 }
+                
+                self.bounds.enclose_polygon(&self.polygon);
             }
             DraggingEditState::PolygonVertex(ref vertex) => {
                 self.polygon.vertices[vertex.vertex_index].x = x as f32;
@@ -372,6 +374,8 @@ impl Selection {
                         new_box = true;
                     }
                 }
+
+                self.bounds.enclose_polygon(&self.polygon);
             } else {
                 new_box = true;
             }
@@ -394,6 +398,8 @@ impl Selection {
                         start_location: (x, y),
                         start_origin: self.polygon.get_origin()
                     });
+
+                    self.bounds.enclose_polygon(&self.polygon);
                 }
             }
             self.mouse_down = true;
@@ -417,6 +423,8 @@ impl Selection {
                         }
     
                         self.polygon.deduplicate();
+
+                        self.bounds.enclose_polygon(&self.polygon);
                     }
                 }
                 DraggingEditState::ShiftPolygonEdge(edge) => {
@@ -427,6 +435,8 @@ impl Selection {
                         self.polygon.vertices.remove((edge.edge_index + 1) % self.polygon.vertices.len());
                     }
                     self.polygon.deduplicate();
+
+                    self.bounds.enclose_polygon(&self.polygon);
                 }
                 _ => {}
             }
@@ -749,19 +759,5 @@ impl Polygon {
             let prev_vertex_index = (i + vertices - 1) % vertices;
             vertex.update(delta, self.hovered_edge.is_some_and(|idx| idx == prev_vertex_index), self.hovered_vertex.is_some_and(|idx| idx == i));
         }
-    }
-
-    pub fn contains_point(&self, point: (f32, f32)) -> bool {
-        let (x, y) = point;
-        let mut inside = false;
-        let vertices = self.vertices.len();
-        for i in 0..vertices {
-            let vertex1 = &self.vertices[i];
-            let vertex2 = &self.vertices[(i + 1) % vertices];
-            if (vertex1.y > y) != (vertex2.y > y) && x < (vertex2.x - vertex1.x) * (y - vertex1.y) / (vertex2.y - vertex1.y) + vertex1.x {
-                inside = !inside;
-            }
-        }
-        inside
     }
 }
