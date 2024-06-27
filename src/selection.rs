@@ -229,6 +229,23 @@ impl Selection {
     ) -> bool {
         // If shift is held, move the selection instead of resizing
         let (x, y) = (mouse_position.0, mouse_position.1);
+
+        let hit = self.detect_polygon_hit(mouse_position);
+        match hit {
+            PolygonHitResult::Vertex(index) => {
+                self.polygon.hovered_edge = None;
+                self.polygon.hovered_vertex = Some(index);
+            }
+            PolygonHitResult::Edge(index) => {
+                self.polygon.hovered_edge = Some(index);
+                self.polygon.hovered_vertex = None;
+            }
+            _ => {
+                self.polygon.hovered_edge = None;
+                self.polygon.hovered_vertex = None;
+            }
+        }
+
         if !self.mouse_down {
             return false;
         }
@@ -489,11 +506,27 @@ impl Selection {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct Polygon {
     pub vertices: Vec<Vertex>,
     pub hovered_vertex: Option<usize>,
     pub hovered_edge: Option<usize>
+}
+
+impl Default for Polygon {
+    fn default() -> Self {
+        // The default state includes some vertices so we don't need to immediately resize the buffer
+        Self {
+            vertices: vec![
+                Vertex::new(0.0, 0.0),
+                Vertex::new(0.0, 0.0),
+                Vertex::new(0.0, 0.0),
+                Vertex::new(0.0, 0.0)
+            ],
+            hovered_vertex: None,
+            hovered_edge: None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -509,14 +542,16 @@ pub(crate) struct Vertex {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GPUVertex {
     pub position: [f32; 2],
-    pub animation: u32
+    pub animation: u32,
+    pub _padding: u32
 }
 
 impl GPUVertex {
     pub fn new(x: f32, y: f32, animation: u32) -> Self {
         Self {
             position: [x, y],
-            animation
+            animation,
+            _padding: 0
         }
     }
 }
@@ -525,8 +560,8 @@ impl Vertex {
     pub fn new(x: f32, y: f32) -> Self {
         Self {
             x, y,
-            vertex_highlight: SmoothFadeAnimation::default(),
-            edge_highlight: SmoothFadeAnimation::default()
+            vertex_highlight: SmoothFadeAnimation::new(false),
+            edge_highlight: SmoothFadeAnimation::new(false)
         }
     }
 
@@ -555,6 +590,18 @@ impl Polygon {
             hovered_edge: None,
             hovered_vertex: None
         }
+    }
+
+    pub fn get_device_coords_polygon(&self, screen_size: (u32, u32)) -> Vec<GPUVertex> {
+        let mut vertices = Vec::new();
+        for vertex in &self.vertices {
+            let mut vertex = vertex.clone();
+            vertex.x /= screen_size.0 as f32;
+            vertex.y /= screen_size.1 as f32;
+            vertices.push(vertex.as_gpu_vertex());
+        }
+
+        vertices
     }
 
     pub fn clear(&mut self) {
@@ -698,13 +745,11 @@ impl Polygon {
         self.vertices.iter().map(|v| v.as_gpu_vertex()).collect()
     }
 
-    pub fn set_hovered_vertex(&mut self, vertex_index: Option<usize>) {
-        self.hovered_vertex = vertex_index;
-    }
-
     pub fn update(&mut self, delta: std::time::Duration) {
+        let vertices = self.vertices.len();
         for (vertex, i) in self.vertices.iter_mut().zip(0..) {
-            vertex.update(delta, self.hovered_edge.is_some_and(|idx| idx == i), self.hovered_vertex.is_some_and(|idx| idx == i));
+            let prev_vertex_index = (i + vertices - 1) % vertices;
+            vertex.update(delta, self.hovered_edge.is_some_and(|idx| idx == prev_vertex_index), self.hovered_vertex.is_some_and(|idx| idx == i));
         }
     }
 }

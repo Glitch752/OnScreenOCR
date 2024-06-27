@@ -20,6 +20,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [X] Free-form selection of OCR region
   - [ ] Undo/redo for edits
   - [ ] Properly crop OCR input and screenshots
+- [ ] Fix extremely strange lag when no text is visible on OCR preview renderer
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

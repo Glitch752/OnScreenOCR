@@ -116,7 +116,7 @@ impl App {
             shader_renderer.update(
                 context,
                 self.size,
-                &self.selection,
+                &mut self.selection,
                 self.ocr_handler.ocr_preview_text.clone(),
                 self.relative_mouse_pos,
                 &mut self.icon_context
@@ -448,6 +448,11 @@ impl ApplicationHandler for App {
                     Key::Named(NamedKey::Control) => {
                         self.selection.ctrl_held =
                             event.state == winit::event::ElementState::Pressed;
+                    }
+                    Key::Named(NamedKey::Tab) => {
+                        if event.state == winit::event::ElementState::Pressed {
+                            self.icon_context.settings.use_polygon = !self.icon_context.settings.use_polygon;
+                        }
                     }
                     Key::Character("c") => {
                         self.icon_context.copy_key_held = event.state == winit::event::ElementState::Pressed;

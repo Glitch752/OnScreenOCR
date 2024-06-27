@@ -1,6 +1,6 @@
 use pixels::{check_texture_size, wgpu::{self, util::DeviceExt}, PixelsContext, TextureError};
 
-use crate::{screenshot::Screenshot, selection::{Polygon, Selection, Vertex}};
+use crate::{screenshot::Screenshot, selection::{GPUVertex, Polygon, Selection}};
 
 use super::IconContext;
 
@@ -8,27 +8,25 @@ use super::IconContext;
 #[derive(Clone, Debug)]
 pub(crate) struct Locals {
     blur_enabled: u32,
-    polygon: Polygon
+    vertices: Vec<GPUVertex>
 }
 
 impl Locals {
     pub(crate) fn new(selection: &Selection, window_size: (u32, u32), blur_enabled: bool) -> Self {
-        let (window_width, window_height) = (window_size.0 as f32, window_size.1 as f32);
         Self {
             blur_enabled: if blur_enabled { 1 } else { 0 },
             // Temporary, until we get polygon logic working for the actual selection
-            polygon: selection.get_device_coords_polygon(window_width, window_height)
+            vertices: selection.polygon.get_device_coords_polygon(window_size)
         }
     }
 
     pub(crate) fn as_bytes(&self) -> Vec<u8> {
         let blur_enabled_bytes = bytemuck::bytes_of(&self.blur_enabled);
 
-        let vertex_count = self.polygon.vertices.len() as u32;
+        let vertex_count = self.vertices.len() as u32;
         let vertex_count_bytes = bytemuck::bytes_of(&vertex_count);
 
-        let gpu_vertices = self.polygon.as_gpu_vertices();
-        let polygon_bytes = bytemuck::try_cast_slice(&gpu_vertices);
+        let polygon_bytes = bytemuck::try_cast_slice(&self.vertices);
         if polygon_bytes.is_err() {
             eprintln!("Failed to cast polygon vertices to bytes");
             return vec![];
@@ -47,14 +45,7 @@ impl Locals {
 impl Default for Locals {
     fn default() -> Self {
         Self {
-            polygon: Polygon {
-                vertices: vec![
-                    Vertex::new(0.0, 0.0),
-                    Vertex::new(1.0, 0.0),
-                    Vertex::new(1.0, 1.0),
-                    Vertex::new(0.0, 1.0),
-                ]
-            },
+            vertices: Polygon::default().as_gpu_vertices(),
             blur_enabled: 0
         }
     }

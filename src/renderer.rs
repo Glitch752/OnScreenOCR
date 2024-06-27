@@ -7,7 +7,7 @@ use pixels::{wgpu, PixelsContext, TextureError};
 use winit::event::ElementState;
 use crate::selection::Bounds;
 
-pub(crate) use animation::{SmoothMoveFadeAnimation, SmoothFadeAnimation};
+pub(crate) use animation::SmoothFadeAnimation;
 
 use crate::{screenshot::Screenshot, selection::Selection};
 
@@ -81,12 +81,13 @@ impl Renderer {
         &mut self,
         context: &PixelsContext,
         window_size: (u32, u32),
-        selection: &Selection,
+        selection: &mut Selection,
         ocr_preview_text: Option<String>,
         relative_mouse_pos: (i32, i32),
         icon_context: &IconContext
     ) {
         let delta = self.last_update.elapsed();
+        selection.polygon.update(delta); // This probably isn't the best place to put this, but it works best for now.
         self.last_update = std::time::Instant::now();
 
         self.ocr_preview_renderer.update(context, window_size, selection.bounds, ocr_preview_text, icon_context, delta, &mut self.icon_renderer);
