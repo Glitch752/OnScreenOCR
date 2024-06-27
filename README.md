@@ -24,6 +24,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Handle "preserve newlines" being off for Alto and HOCR with an XML parser
 - [ ] Ctrl-A to select entire screen
 - [ ] Ability to drag polygon path with CTRL held
+- [ ] Stay in system tray when closed
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

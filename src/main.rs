@@ -8,10 +8,11 @@ use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
 use selection::Selection;
+use undo_stack::UndoStack;
 use std::sync::mpsc;
 use std::thread;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
@@ -25,6 +26,7 @@ mod selection;
 mod wgpu_text;
 mod settings;
 mod clipboard_image;
+mod undo_stack;
 
 fn main() {
     // Only run event loop on user interaction
@@ -64,6 +66,8 @@ struct App {
 
     icon_context: IconContext,
     icon_event_receiver: mpsc::Receiver<IconEvent>,
+
+    undo_stack: UndoStack
 }
 
 impl Default for App {
@@ -81,6 +85,8 @@ impl Default for App {
             
             icon_context,
             icon_event_receiver,
+
+            undo_stack: UndoStack::new()
         }
     }
 
@@ -262,6 +268,19 @@ impl App {
         self.selection.shift_held = inputbot::KeybdKey::LShiftKey.is_pressed();
         self.selection.ctrl_held = inputbot::KeybdKey::LControlKey.is_pressed();
     }
+
+    fn undo(&mut self) {
+        if self.undo_stack.undo(&mut self.selection).is_ok() {
+            self.ocr_handler.ocr_preview_text = None;
+            self.ocr_handler.selection_changed(&self.selection);
+        }
+    }
+    fn redo(&mut self) {
+        if self.undo_stack.redo(&mut self.selection).is_ok() {
+            self.ocr_handler.ocr_preview_text = None;
+            self.ocr_handler.selection_changed(&self.selection);
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -312,6 +331,8 @@ impl ApplicationHandler for App {
                 .expect("Unable to create shader renderer");
             
             self.ocr_handler.set_screenshot(screenshot);
+            
+            self.undo_stack.take_snapshot(&self.selection);
 
             self.window_state = Some(WindowState {
                 window,
@@ -379,6 +400,9 @@ impl ApplicationHandler for App {
 
             self.selection.reset();
             self.icon_context.reset();
+
+            self.undo_stack.reset();
+            self.undo_stack.take_snapshot(&self.selection);
 
             let window_state = self.window_state.as_mut().unwrap();
             let window = &window_state.window;
@@ -463,6 +487,7 @@ impl ApplicationHandler for App {
                             self.selection.bounds.y += move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
                             self.ocr_handler.selection_changed(&self.selection);
+                            self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
@@ -470,6 +495,7 @@ impl ApplicationHandler for App {
                             self.selection.bounds.y -= move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
                             self.ocr_handler.selection_changed(&self.selection);
+                            self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowLeft) => {
@@ -477,6 +503,7 @@ impl ApplicationHandler for App {
                             self.selection.bounds.x -= move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
                             self.ocr_handler.selection_changed(&self.selection);
+                            self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
@@ -484,6 +511,7 @@ impl ApplicationHandler for App {
                             self.selection.bounds.x += move_dist;
                             self.selection.bounds.clamp_to_screen(self.size);
                             self.ocr_handler.selection_changed(&self.selection);
+                            self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
 
@@ -500,6 +528,26 @@ impl ApplicationHandler for App {
                                 Key::Character("6") => settings.auto_copy = !settings.auto_copy,
                                 _ => (),
                             }
+                        }
+                    }
+
+                    Key::Character("z") => {
+                        if self.selection.ctrl_held && event.state == winit::event::ElementState::Pressed {
+                            self.undo();
+                        }
+                    }
+                    Key::Character("y") => {
+                        if self.selection.ctrl_held && event.state == winit::event::ElementState::Pressed {
+                            self.redo();
+                        }
+                    }
+
+                    Key::Character("a") => {
+                        if event.state == winit::event::ElementState::Pressed && self.selection.ctrl_held {
+                            self.selection.bounds = self.size.into();
+                            self.selection.polygon.set_from_bounds(&self.selection.bounds);
+                            self.ocr_handler.selection_changed(&self.selection);
+                            self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     _ => (),
@@ -533,6 +581,9 @@ impl ApplicationHandler for App {
                     }
                     self.window_state.as_ref().unwrap().window.request_redraw();
                     self.ocr_handler.selection_changed(&self.selection);
+                    if state == ElementState::Released {
+                        self.undo_stack.take_snapshot(&self.selection);
+                    }
                 }
 
                 self.window_state.as_ref().unwrap().window.request_redraw();

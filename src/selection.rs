@@ -157,18 +157,6 @@ impl Bounds {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Selection {
-    pub bounds: Bounds,
-    pub polygon: Polygon,
-
-    pub mouse_down: bool,
-    pub shift_held: bool,
-    pub ctrl_held: bool,
-
-    drag_state: DraggingEditState,
-}
-
 enum PolygonHitResult {
     None,
     Vertex(usize),
@@ -207,6 +195,18 @@ struct PolygonEdgeEditState {
 struct ShiftSelectionEditState {
     start_location: (i32, i32),
     start_origin: (f32, f32)
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Selection {
+    pub bounds: Bounds,
+    pub polygon: Polygon,
+
+    pub mouse_down: bool,
+    pub shift_held: bool,
+    pub ctrl_held: bool,
+
+    drag_state: DraggingEditState,
 }
 
 impl Selection {
@@ -509,6 +509,12 @@ impl Selection {
         }
 
         PolygonHitResult::None
+    }
+}
+
+impl Into<Bounds> for (u32, u32) {
+    fn into(self) -> Bounds {
+        Bounds::new(0, 0, self.0 as i32, self.1 as i32)
     }
 }
 
