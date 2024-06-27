@@ -151,6 +151,21 @@ pub fn get_icon_layouts() -> IconLayouts {
         layout
     });
 
+    settings_layout.add_layout({
+        let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
+        layout.add_text(IconText::new("Keybind: __________________".to_string())); // Plenty of characters to make the text allocate enough background tiles
+        layout.add_icon({
+            let mut icon = create_icon!("keybind", IconBehavior::Click);
+            icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
+                todo!();
+                // ctx.channel.send(IconEvent::OpenOCRConfiguration).expect("Unable to send open OCR configuration event");
+            }));
+            icon.tooltip_text = Some("Edit keybind".to_string());
+            icon
+        });
+        layout
+    });
+
     let mut icon_layouts = IconLayouts::new();
     icon_layouts.add_layout(
         String::from("copy"),
@@ -164,7 +179,7 @@ pub fn get_icon_layouts() -> IconLayouts {
         }
     );
     icon_layouts.add_layout(String::from("menubar"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE / 2. + ICON_MARGIN)), LayoutChild::Layout(menubar_layout));
-    icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 8. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
+    icon_layouts.add_layout(String::from("settings"), ScreenRelativePosition::new(ScreenLocation::TopCenter, (0., ICON_SIZE * 9. + ICON_MARGIN * 2.)), LayoutChild::Layout(settings_layout));
 
     icon_layouts.initialize();
 

@@ -3,14 +3,13 @@
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 use clipboard_image::copy_image_to_clipboard;
-use inputbot::{KeybdKey, MouseCursor};
+use inputbot::MouseCursor;
 use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
 use selection::Selection;
 use undo_stack::UndoStack;
 use std::sync::mpsc;
-use std::thread;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -27,6 +26,7 @@ mod wgpu_text;
 mod settings;
 mod clipboard_image;
 mod undo_stack;
+mod input;
 
 fn main() {
     // Only run event loop on user interaction
@@ -34,29 +34,9 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let mut app = App::default();
-    
-    let loop_proxy = event_loop.create_proxy();
-    KeybdKey::bind_all(move |event| {
-        match inputbot::from_keybd_key(event) {
-            Some(key) => {
-                println!("Key pressed: {:?}", key);
-                // if LShiftKey.is_pressed() && LAltKey.is_pressed() {
-                //     // We need to open the window on the main thread
-                //     loop_proxy.send_event(()).expect("Unable to send event");
-                // }
-            }
-            _ => {}
-        }
-    });
+    input::handle(&event_loop, &mut app);
 
-    thread::spawn(|| {
-        inputbot::handle_input_events();
-    });
-
-    println!("Listening for keybinds");
-    event_loop
-        .run_app(&mut app)
-        .expect("Unable to run event loop");
+    event_loop.run_app(&mut app).expect("Unable to run event loop");
 }
 
 struct WindowState {
@@ -455,11 +435,11 @@ impl ApplicationHandler for App {
 
                 let window = &self.window_state.as_ref().unwrap().window;
 
-                let mut move_dist = 10;
+                let mut move_dist = 10.;
                 if self.selection.shift_held {
-                    move_dist /= 10;
+                    move_dist /= 10.;
                 } else if self.selection.ctrl_held {
-                    move_dist *= 5;
+                    move_dist *= 5.;
                 }
 
                 match event.logical_key.as_ref() {
@@ -492,32 +472,36 @@ impl ApplicationHandler for App {
                     }
                     Key::Named(NamedKey::ArrowDown) => {
                         if event.state == winit::event::ElementState::Pressed {
-                            self.selection.bounds.y += move_dist;
-                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.selection.polygon.move_by(0., move_dist);
+                            self.selection.polygon.clamp_to_screen(self.size);
+                            self.selection.bounds.enclose_polygon(&self.selection.polygon);
                             self.ocr_handler.selection_changed(&self.selection);
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowUp) => {
                         if event.state == winit::event::ElementState::Pressed {
-                            self.selection.bounds.y -= move_dist;
-                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.selection.polygon.move_by(0., -move_dist);
+                            self.selection.polygon.clamp_to_screen(self.size);
+                            self.selection.bounds.enclose_polygon(&self.selection.polygon);
                             self.ocr_handler.selection_changed(&self.selection);
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowLeft) => {
                         if event.state == winit::event::ElementState::Pressed {
-                            self.selection.bounds.x -= move_dist;
-                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.selection.polygon.move_by(-move_dist, 0.);
+                            self.selection.polygon.clamp_to_screen(self.size);
+                            self.selection.bounds.enclose_polygon(&self.selection.polygon);
                             self.ocr_handler.selection_changed(&self.selection);
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
                     Key::Named(NamedKey::ArrowRight) => {
                         if event.state == winit::event::ElementState::Pressed {
-                            self.selection.bounds.x += move_dist;
-                            self.selection.bounds.clamp_to_screen(self.size);
+                            self.selection.polygon.move_by(move_dist, 0.);
+                            self.selection.polygon.clamp_to_screen(self.size);
+                            self.selection.bounds.enclose_polygon(&self.selection.polygon);
                             self.ocr_handler.selection_changed(&self.selection);
                             self.undo_stack.take_snapshot(&self.selection);
                         }

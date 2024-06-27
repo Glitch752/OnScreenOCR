@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use serde::{Deserialize, Serialize};
 
 static SETTINGS_PATH: &str = "settings.bin";
@@ -18,13 +20,25 @@ impl OCRLanguage {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Clone, Copy, Deserialize)]
 pub struct Keybind {
     pub ctrl: bool,
     pub shift: bool,
     pub alt: bool,
     pub meta: bool, // Windows key on Windows, Command key on macOS
     pub key: char
+}
+
+impl Default for Keybind {
+    fn default() -> Self {
+        Self {
+            ctrl: false,
+            shift: true,
+            alt: true,
+            meta: false,
+            key: 'z'
+        }
+    }
 }
 
 impl Keybind {
@@ -59,7 +73,7 @@ pub struct SettingsManager {
     pub close_on_copy: bool,
     pub auto_copy: bool,
 
-    pub open_keybind: Keybind,
+    pub open_keybind: Arc<Mutex<Keybind>>,
 
     // Don't seriaize with the other settings; it's loaded from a separate file
     #[serde(skip)]
@@ -249,14 +263,12 @@ impl SettingsManager {
 
             tesseract_settings: TesseractSettings::default(),
 
-            open_keybind: Keybind {
-                ctrl: false,
-                shift: true,
-                alt: false,
-                meta: true,
-                key: 'z'
-            }
+            open_keybind: Arc::new(Mutex::new(Keybind::default()))
         }
+    }
+
+    pub fn set_open_keybind(&mut self, keybind: Keybind) {
+        *self.open_keybind.lock().unwrap() = keybind;
     }
 
     pub fn save(&self) {
