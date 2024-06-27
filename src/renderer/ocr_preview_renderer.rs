@@ -66,9 +66,20 @@ impl OCRPreviewRenderer {
 
         let margin = 10;
 
-        let y = std::cmp::min(bounds.y, window_size.1 as i32 - ((text_lines - 1) * 19 + margin));
+        let y = std::cmp::max(margin + 16, std::cmp::min(bounds.y, window_size.1 as i32 - ((text_lines - 1) * 18 + margin)));
 
-        if left_side_space > right_side_space {
+        let minimum_side_space = 100;
+
+        if left_side_space >= right_side_space {
+            if left_side_space < minimum_side_space {
+                return Some(PreviewTextPlacement {
+                    x: margin as f32,
+                    y: y as f32,
+                    horizontal_align: glyph_brush::HorizontalAlign::Left,
+                    max_line_length: window_size.0 as f32 - margin as f32 * 2.
+                });
+            }
+
             let max_line_length = bounds.x as f32 - margin as f32 * 2.;
             // If we have more than 3 lines and any line is very long, we should align to the left at the edge of the screen instead since it just looks better
             // Very long is subjective here -- we could come up with a real heuristic but that would require feedback from the layout engine which I do not want to do.
@@ -88,6 +99,15 @@ impl OCRPreviewRenderer {
                 max_line_length
             })
         } else {
+            if right_side_space < minimum_side_space {
+                return Some(PreviewTextPlacement {
+                    x: window_size.0 as f32 - margin as f32,
+                    y: y as f32,
+                    horizontal_align: glyph_brush::HorizontalAlign::Right,
+                    max_line_length: window_size.0 as f32 - margin as f32 * 2.
+                });
+            }
+
             let max_line_length = window_size.0 as f32 - (bounds.x as f32 + bounds.width as f32 + margin as f32);
             Some(PreviewTextPlacement {
                 x: (bounds.x + bounds.width + margin) as f32,

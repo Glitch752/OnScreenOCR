@@ -14,15 +14,15 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
   - Ability to export in other Tesseract formats (TSV, Alto, HOCR)
 - Support for non-rectangular selections
 - Support for multiple monitors
+- Keybinds for common actions (Ctrl+C to copy, Ctrl+Z to undo, arrows to move selection, etc.)
+- Full undo/redo history
 
 ## TODO
 - [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
-- [ ] Undo/redo for selection edits
 - [ ] Add OCR language list to tesseract settings file
 - [ ] Handle "preserve newlines" being off for Alto and HOCR with an XML parser
-- [ ] Ctrl-A to select entire screen
 - [ ] Ability to drag polygon path with CTRL held
 - [ ] Stay in system tray when closed
 
