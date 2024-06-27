@@ -22,7 +22,6 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
 - [ ] Add OCR language list to tesseract settings file
-- [ ] Handle "preserve newlines" being off for Alto and HOCR with an XML parser
 - [ ] Ability to drag polygon path with CTRL held
 - [ ] Stay in system tray when closed
 

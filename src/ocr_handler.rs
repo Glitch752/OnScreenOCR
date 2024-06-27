@@ -228,10 +228,7 @@ fn perform_ocr(init_data: &mut InitData) {
             let mut text = tesseract_api.get_utf8_text().unwrap_or("".to_string());
 
             if init_data.format_options.reformat_and_correct {
-                let mut corrected_text = text.clone();
-                if init_data.format_options.reformat_and_correct {
-                    corrected_text = reformat_and_correct_text(corrected_text, init_data);
-                }
+                let corrected_text = reformat_and_correct_text(text, init_data);
                 init_data.tx.send(corrected_text).expect("Unable to send text");
             } else {
                 if !init_data.format_options.maintain_newlines {
@@ -241,11 +238,17 @@ fn perform_ocr(init_data: &mut InitData) {
             }
         }
         TesseractExportMode::Alto => {
-            let text = tesseract_api.get_alto_text(0).unwrap_or("".to_string());
+            let mut text = tesseract_api.get_alto_text(0).unwrap_or("".to_string());
+            if !init_data.format_options.maintain_newlines {
+                text = compact_xml(&text);
+            }
             init_data.tx.send(text).expect("Unable to send text");
         }
         TesseractExportMode::HOCR => {
-            let text = tesseract_api.get_hocr_text(0).unwrap_or("".to_string());
+            let mut text = tesseract_api.get_hocr_text(0).unwrap_or("".to_string());
+            if !init_data.format_options.maintain_newlines {
+                text = compact_xml(&text);
+            }
             init_data.tx.send(text).expect("Unable to send text");
         }
         TesseractExportMode::TSV => {
@@ -253,6 +256,22 @@ fn perform_ocr(init_data: &mut InitData) {
             init_data.tx.send(text).expect("Unable to send text");
         }
     }
+}
+
+fn compact_xml(xml_string: &str) -> String {
+    let mut reader = quick_xml::Reader::from_str(xml_string);
+    let mut writer = quick_xml::Writer::new(std::io::Cursor::new(Vec::new()));
+
+    loop {
+        match reader.read_event() {
+            Ok(quick_xml::events::Event::Text(_)) => {}, // Skip text events
+            Ok(quick_xml::events::Event::Eof) => break,
+            Ok(e) => assert!(writer.write_event(e).is_ok()),
+            Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
+        }
+    }
+
+    return String::from_utf8(writer.into_inner().into_inner()).expect("Unable to convert XML to string");
 }
 
 fn get_hyphenated_word_list_cache(language_code: &str) -> Vec<String> {
