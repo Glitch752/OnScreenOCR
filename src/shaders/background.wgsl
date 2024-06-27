@@ -37,7 +37,7 @@ const BLUR_RADIUS = 2.0;
 const BLUR_ITERATIONS = 2.0;
 const OUT_OF_BOX_TINT = vec3<f32>(0.4, 0.4, 0.42);
 
-const BORDER_WIDTH = 1.0;
+const BORDER_WIDTH = 0.6; // Note: not in pixels. Roughly 1.5x less than the actual pixel width, but depends on the situation.
 const BORDER_INNER_COLOR = vec4<f32>(0.482, 0.412, 0.745, 1.0);
 const BORDER_OUTER_COLOR = vec4<f32>(0.482, 0.412, 0.745, 0.0);
 
@@ -154,7 +154,7 @@ fn get_blurred_color_iteration(
 }
 
 fn alpha_mix(color: vec3<f32>, overlay_color: vec4<f32>) -> vec3<f32> {
-    return color * overlay_color.a + overlay_color.rgb * (1.0 - overlay_color.a);
+    return color * (1.0 - overlay_color.a) + overlay_color.rgb * overlay_color.a;
 }
 
 fn get_vertex_opacity(vertex_index: i32) -> f32 {
@@ -171,7 +171,7 @@ fn color_at_position(tex_coord: vec2<f32>, screen_dimensions: vec2<f32>, in_box_
     var sdf_result = polygon_signed_distance(tex_coord, screen_dimensions);
     var sdf_edge_opcity = get_edge_opacity(sdf_result.index);
     if(sdf_result.distance < 0.0) {
-        in_box = 1.0;
+        in_box = 1.0 * min(sdf_result.distance * -0.5 / BORDER_WIDTH, 1.);
     }
     var vertex_sdf_result = vertex_signed_distance(tex_coord, screen_dimensions);
     var sdf_vertex_opacity = get_vertex_opacity(vertex_sdf_result.index);
@@ -190,9 +190,9 @@ fn color_at_position(tex_coord: vec2<f32>, screen_dimensions: vec2<f32>, in_box_
                 out_of_box_color * OUT_OF_BOX_TINT,
                 // Border color
                 mix(
-                    BORDER_OUTER_COLOR,
                     mix(BORDER_INNER_COLOR, vec4(1.0, 1.0, 1.0, 1.0), sdf_edge_opcity),
-                    min(sdf_result.distance / BORDER_WIDTH, 1.)
+                    BORDER_OUTER_COLOR,
+                    min(sdf_result.distance / BORDER_WIDTH / (sdf_edge_opcity + 1.), 1.)
                 )
             ),
             // Color for inside the main selection

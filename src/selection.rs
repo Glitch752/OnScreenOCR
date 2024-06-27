@@ -400,26 +400,24 @@ impl Selection {
         } else {
             match &self.drag_state {
                 DraggingEditState::PolygonVertex(index) => {
-                    if self.polygon.vertices.len() <= 3 {
-                        return false;
+                    if self.polygon.vertices.len() > 3 {
+                        if self.should_merge_surrounding_edges(index.vertex_index).is_some() {
+                            self.polygon.vertices.remove(index.vertex_index);
+                        }
+    
+                        // Also check the two neighboring vertices
+                        let prev_vertex_index = (index.vertex_index + self.polygon.vertices.len() - 1) % self.polygon.vertices.len();
+    
+                        let next_vertex_index = (index.vertex_index + 1) % self.polygon.vertices.len();
+                        if self.should_merge_surrounding_edges(prev_vertex_index).is_some() {
+                            self.polygon.vertices.remove(prev_vertex_index);
+                        }
+                        if self.should_merge_surrounding_edges(next_vertex_index).is_some() {
+                            self.polygon.vertices.remove(next_vertex_index);
+                        }
+    
+                        self.polygon.deduplicate();
                     }
-                    
-                    if self.should_merge_surrounding_edges(index.vertex_index).is_some() {
-                        self.polygon.vertices.remove(index.vertex_index);
-                    }
-
-                    // Also check the two neighboring vertices
-                    let prev_vertex_index = (index.vertex_index + self.polygon.vertices.len() - 1) % self.polygon.vertices.len();
-
-                    let next_vertex_index = (index.vertex_index + 1) % self.polygon.vertices.len();
-                    if self.should_merge_surrounding_edges(prev_vertex_index).is_some() {
-                        self.polygon.vertices.remove(prev_vertex_index);
-                    }
-                    if self.should_merge_surrounding_edges(next_vertex_index).is_some() {
-                        self.polygon.vertices.remove(next_vertex_index);
-                    }
-
-                    self.polygon.deduplicate();
                 }
                 DraggingEditState::ShiftPolygonEdge(edge) => {
                     if self.should_merge_surrounding_edges(edge.edge_index).is_some() {
@@ -751,5 +749,19 @@ impl Polygon {
             let prev_vertex_index = (i + vertices - 1) % vertices;
             vertex.update(delta, self.hovered_edge.is_some_and(|idx| idx == prev_vertex_index), self.hovered_vertex.is_some_and(|idx| idx == i));
         }
+    }
+
+    pub fn contains_point(&self, point: (f32, f32)) -> bool {
+        let (x, y) = point;
+        let mut inside = false;
+        let vertices = self.vertices.len();
+        for i in 0..vertices {
+            let vertex1 = &self.vertices[i];
+            let vertex2 = &self.vertices[(i + 1) % vertices];
+            if (vertex1.y > y) != (vertex2.y > y) && x < (vertex2.x - vertex1.x) * (y - vertex1.y) / (vertex2.y - vertex1.y) + vertex1.x {
+                inside = !inside;
+            }
+        }
+        inside
     }
 }

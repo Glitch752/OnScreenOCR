@@ -1,7 +1,7 @@
 use std::{sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
-use crate::{screenshot::Screenshot, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractSettings}};
+use crate::{screenshot::{crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractSettings}};
 
 pub static LATEST_SCREENSHOT_PATH: &str = "latest.png";
 
@@ -53,6 +53,7 @@ struct InitData {
     screenshot_size: (u32, u32),
     format_options: FormatOptions,
     last_selection_bounds: Option<Bounds>, // Used to recalculate the same OCR when language changes
+    current_screenshot: Option<Screenshot>,
 
     hyphenated_word_list_cache: Vec<String>,
 }
@@ -92,6 +93,7 @@ impl OCRHandler {
                         }
                     }
                     OCREvent::ScreenshotChanged(screenshot) => {
+                        let screenshot = crop_screenshot_to_polygon(polygon, screenshot);
                         init_data.tess_api.raw.set_image(
                             &screenshot.bytes,
                             screenshot.width as i32,
@@ -114,6 +116,7 @@ impl OCRHandler {
                         tx,
                         screenshot_size: (0, 0),
                         format_options: initial_format_options,
+                        screenshot: None,
                         last_selection_bounds: None
                     }
                 },

@@ -1,5 +1,7 @@
 use winit::monitor::MonitorHandle;
 
+use crate::selection::Polygon;
+
 extern crate libc;
 
 #[derive(Debug, Clone)]
@@ -18,6 +20,32 @@ pub(crate) fn screenshot_from_handle(monitor: MonitorHandle) -> Screenshot {
         height: ss.height(),
         bytes: ss_bytes
     }
+}
+
+pub(crate) fn crop_screenshot_to_polygon(polygon: &Polygon, screenshot: Screenshot) -> Screenshot {
+	let mut new_bytes = Vec::new();
+	for y in 0..screenshot.height {
+		for x in 0..screenshot.width {
+			if polygon.contains_point((x as f32, y as f32)) {
+				let idx = (y * screenshot.width + x) * 4;
+				new_bytes.push(screenshot.bytes[idx]);
+				new_bytes.push(screenshot.bytes[idx + 1]);
+				new_bytes.push(screenshot.bytes[idx + 2]);
+				new_bytes.push(screenshot.bytes[idx + 3]);
+			} else {
+				new_bytes.push(0);
+				new_bytes.push(0);
+				new_bytes.push(0);
+				new_bytes.push(0);
+			}
+		}
+	}
+
+	Screenshot {
+		width: screenshot.width,
+		height: screenshot.height,
+		bytes: new_bytes
+	}
 }
 
 // Tweaked from https://github.com/alexchandel/screenshot-rs/blob/master/src/lib.rs, only with Windows APIs for now
