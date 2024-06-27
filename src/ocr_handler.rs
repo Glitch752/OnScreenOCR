@@ -1,7 +1,7 @@
 use std::{sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
-use crate::{screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractSettings}};
+use crate::{screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractExportMode, TesseractSettings}};
 
 pub static LATEST_SCREENSHOT_PATH: &str = "latest.png";
 
@@ -54,6 +54,7 @@ struct InitData {
     format_options: FormatOptions,
     latest_selection: Option<OCRSelectionData>, // Used to recalculate the same OCR when language changes
     current_screenshot: Option<Screenshot>,
+    export_mode: TesseractExportMode,
 
     hyphenated_word_list_cache: Vec<String>,
 }
@@ -124,10 +125,31 @@ impl OCRHandler {
                     }
                     OCREvent::SettingsUpdated(tesseract_settings) => {
                         init_data.hyphenated_word_list_cache = get_hyphenated_word_list_cache(&tesseract_settings.ocr_language_code);
+                        init_data.export_mode = tesseract_settings.export_mode;
 
                         init_data.tess_api = configure_tesseract(tesseract_settings);
-                        let img = leptess::leptonica::pix_read(std::path::Path::new(LATEST_SCREENSHOT_PATH)).expect("Unable to read image");
-                        init_data.tess_api.set_image(&img);
+
+                        let selection = init_data.latest_selection.as_ref();
+                        if selection.is_none() {
+                            return;
+                        }
+                        let selection = selection.unwrap();
+
+                        let cropped_screenshot = crop_screenshot_to_bounds(selection.bounds, init_data.current_screenshot.as_ref().unwrap());
+                        let cropped_screenshot = crop_screenshot_to_polygon(
+                            &selection.polygon_vertices.iter().map(|v| (v.0 - selection.bounds.x, v.1 - selection.bounds.y)).collect(),
+                            &cropped_screenshot
+                        );
+                        init_data.tess_api.raw.set_image(
+                            &cropped_screenshot.bytes,
+                            cropped_screenshot.width as i32,
+                            cropped_screenshot.height as i32,
+                            4,
+                            4 * cropped_screenshot.width as i32
+                        ).expect("Unable to set image");
+                        init_data.screenshot_size = (cropped_screenshot.width as u32, cropped_screenshot.height as u32);
+                        init_data.tess_api.set_source_resolution(70); // Doesn't matter to us -- just suppress the warning
+
                         if init_data.latest_selection.is_some() {
                             perform_ocr(init_data);
                         }
@@ -143,12 +165,13 @@ impl OCRHandler {
                 move || {
                     InitData {
                         hyphenated_word_list_cache: get_hyphenated_word_list_cache(&tesseract_settings.ocr_language_code),
+                        export_mode: tesseract_settings.export_mode,
                         tess_api: configure_tesseract(tesseract_settings),
                         tx,
                         screenshot_size: (0, 0),
                         format_options: initial_format_options,
                         current_screenshot: None,
-                        latest_selection: None
+                        latest_selection: None,
                     }
                 },
             ),
@@ -200,19 +223,35 @@ fn perform_ocr(init_data: &mut InitData) {
     let tesseract_api = &mut init_data.tess_api;
     tesseract_api.recognize();
 
-    let mut text = tesseract_api.get_utf8_text().unwrap_or("".to_string());
+    match init_data.export_mode {
+        TesseractExportMode::UTF8 => {
+            let mut text = tesseract_api.get_utf8_text().unwrap_or("".to_string());
 
-    if init_data.format_options.reformat_and_correct {
-        let mut corrected_text = text.clone();
-        if init_data.format_options.reformat_and_correct {
-            corrected_text = reformat_and_correct_text(corrected_text, init_data);
+            if init_data.format_options.reformat_and_correct {
+                let mut corrected_text = text.clone();
+                if init_data.format_options.reformat_and_correct {
+                    corrected_text = reformat_and_correct_text(corrected_text, init_data);
+                }
+                init_data.tx.send(corrected_text).expect("Unable to send text");
+            } else {
+                if !init_data.format_options.maintain_newlines {
+                    text = text.replace("\n", " ");
+                }
+                init_data.tx.send(text).expect("Unable to send text");
+            }
         }
-        init_data.tx.send(corrected_text).expect("Unable to send text");
-    } else {
-        if !init_data.format_options.maintain_newlines {
-            text = text.replace("\n", " ");
+        TesseractExportMode::Alto => {
+            let text = tesseract_api.get_alto_text(0).unwrap_or("".to_string());
+            init_data.tx.send(text).expect("Unable to send text");
         }
-        init_data.tx.send(text).expect("Unable to send text");
+        TesseractExportMode::HOCR => {
+            let text = tesseract_api.get_hocr_text(0).unwrap_or("".to_string());
+            init_data.tx.send(text).expect("Unable to send text");
+        }
+        TesseractExportMode::TSV => {
+            let text = tesseract_api.get_tsv_text(0).unwrap_or("".to_string());
+            init_data.tx.send(text).expect("Unable to send text");
+        }
     }
 }
 

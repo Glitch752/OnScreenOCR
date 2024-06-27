@@ -6,7 +6,7 @@ use clipboard_image::copy_image_to_clipboard;
 use inputbot::{KeybdKey::*, MouseCursor};
 use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
-use screenshot::screenshot_from_handle;
+use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
 use selection::Selection;
 use std::sync::mpsc;
 use std::thread;
@@ -227,7 +227,7 @@ impl App {
             return;
         }
 
-        let mut pos_bounds = self.selection.bounds.to_positive_size();
+        let pos_bounds = self.selection.bounds.to_positive_size();
         if pos_bounds.width < 5 || pos_bounds.height < 5 {
             return;
         }
@@ -238,23 +238,15 @@ impl App {
             eprintln!("Error loading image: {:?}", img);
             return;
         }
-        let mut img = img.unwrap();
+        let screenshot = Screenshot::from(img.unwrap());
         
-        if pos_bounds.x + pos_bounds.width > img.width() as i32 {
-            pos_bounds.width = img.width() as i32 - pos_bounds.x;
-        }
-        if pos_bounds.y + pos_bounds.height > img.height() as i32 {
-            pos_bounds.height = img.height() as i32 - pos_bounds.y;
-        }
-
-        img.crop(
-            pos_bounds.x as u32,
-            pos_bounds.y as u32,
-            pos_bounds.width as u32,
-            pos_bounds.height as u32,
+        let cropped_screenshot = crop_screenshot_to_bounds(pos_bounds, &screenshot);
+        let cropped_screenshot = crop_screenshot_to_polygon(
+            &self.selection.polygon.vertices.iter().map(|v| (v.x as i32 - self.selection.bounds.x, v.y as i32 - self.selection.bounds.y)).collect(),
+            &cropped_screenshot
         );
 
-        copy_image_to_clipboard(&img);
+        copy_image_to_clipboard(&cropped_screenshot.into());
         
         if self.icon_context.settings.close_on_copy {
             self.hide_window();

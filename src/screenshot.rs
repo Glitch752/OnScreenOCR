@@ -1,3 +1,4 @@
+use image::{DynamicImage, GenericImageView};
 use winit::monitor::MonitorHandle;
 
 use crate::selection::Bounds;
@@ -9,6 +10,24 @@ pub(crate) struct Screenshot {
     pub width: usize,
     pub height: usize,
     pub bytes: Vec<u8>,
+}
+
+impl From<DynamicImage> for Screenshot {
+	fn from(img: DynamicImage) -> Self {
+		let (width, height) = img.dimensions();
+		let bytes = img.to_rgba8().into_raw();
+		Screenshot {
+			width: width as usize,
+			height: height as usize,
+			bytes
+		}
+	}
+}
+
+impl Into<DynamicImage> for Screenshot {
+	fn into(self) -> DynamicImage {
+		DynamicImage::ImageRgba8(image::RgbaImage::from_raw(self.width as u32, self.height as u32, self.bytes).unwrap())
+	}
 }
 
 pub(crate) fn screenshot_from_handle(monitor: MonitorHandle) -> Screenshot {

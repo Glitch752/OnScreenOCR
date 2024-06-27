@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-static OCR_LANGUAGES: [OCRLanguage; 2] = [
+static OCR_LANGUAGES: [OCRLanguage; 3] = [
     OCRLanguage { code: "eng", name: "English" },
+    OCRLanguage { code: "eng_slow", name: "English (slow)" },
     OCRLanguage { code: "deu", name: "German  " }, // Spaces after this are intentional to make the layout look better
 ];
 static DEFAULT_OCR_LANGUAGE: OCRLanguage = OCR_LANGUAGES[0];
@@ -31,9 +32,18 @@ pub struct SettingsManager {
     pub tesseract_settings: TesseractSettings,
 }
 
+#[derive(Debug, Serialize, Copy, Clone, Deserialize)]
+pub enum TesseractExportMode {
+    UTF8,
+    HOCR,
+    Alto,
+    TSV
+}
+
 #[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct TesseractSettings {
     pub ocr_language_code: String,
+    pub export_mode: TesseractExportMode,
 
     pub tesseract_parameters: toml::Table
 }
@@ -57,7 +67,8 @@ impl Default for TesseractSettings {
 
         Self {
             ocr_language_code: DEFAULT_OCR_LANGUAGE.code.to_string(),
-            tesseract_parameters: toml::Table::new()
+            tesseract_parameters: toml::Table::new(),
+            export_mode: TesseractExportMode::UTF8
         }
     }
 }
@@ -66,10 +77,26 @@ impl TesseractSettings {
     fn save(&self) {
         let encoded = toml::to_string(&self).unwrap();
         // Not a perfect solution, but the comment isn't a huge deal
+        let encoded = format!(r#"# The lower-level Tesseract configuration.
+# If this file is messed up in such a way it can't be loaded, it will be re-created,
+# and the old file will be stored uner `{}.bak`.
+
+{}"#, TESSERACT_SETTNGS_PATH, encoded);
         let encoded = encoded.replace("[tesseract_parameters]", r#"# Each entry should be a value for a parameter.
 # There are some useful parameters here: https://tesseract-ocr.github.io/tessdoc/tess3/ControlParams.html
 # This is a (old) list of all parameters: http://www.sk-spell.sk.cx/tesseract-ocr-parameters-in-302-version
 [tesseract_parameters]"#);
+        let encoded = encoded.replace("export_mode = ", r#"
+# The export mode. Possible values:
+# "UTF8" - Normal text
+# "HOCR" - An OCR-specific HTML format with coordinates, layout information, etc.
+#    More information available here: https://en.wikipedia.org/wiki/HOCR
+# "Alto" - An XML format originally designed for OCR data
+#    More information available here: https://en.wikipedia.org/wiki/Analyzed_Layout_and_Text_Object
+# "TSV" - Tab-separated values
+# Note that turning "preserve newlines" off and "Reformat and correct results" will only work with "UTF8"
+# If you don't know what to choose, "UTF8" is probably what you expect.
+export_mode = "#);
         std::fs::write(TESSERACT_SETTNGS_PATH, encoded).unwrap();
     }
 
@@ -82,14 +109,14 @@ impl TesseractSettings {
             let toml_string = String::from_utf8(encoded);
             if toml_string.is_err() {
                 eprintln!("Failed to decode Tesseract setting string, using default settings and overwriting the file");
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::rename(TESSERACT_SETTNGS_PATH, format!("{}.bak", TESSERACT_SETTNGS_PATH)).unwrap();
                 *self = TesseractSettings::default();
                 return;
             }
 
             *self = toml::from_str(&toml_string.unwrap()).unwrap_or_else(|_| {
                 eprintln!("Failed to deserialize Tesseract settings, using default settings and overwriting the file");
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::rename(TESSERACT_SETTNGS_PATH, format!("{}.bak", TESSERACT_SETTNGS_PATH)).unwrap();
                 TesseractSettings::default()
             });
         }

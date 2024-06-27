@@ -423,8 +423,6 @@ impl Selection {
                         }
     
                         self.polygon.deduplicate();
-
-                        self.bounds.enclose_polygon(&self.polygon);
                     }
                 }
                 DraggingEditState::ShiftPolygonEdge(edge) => {
@@ -435,13 +433,13 @@ impl Selection {
                         self.polygon.vertices.remove((edge.edge_index + 1) % self.polygon.vertices.len());
                     }
                     self.polygon.deduplicate();
-
-                    self.bounds.enclose_polygon(&self.polygon);
                 }
                 _ => {}
             }
             self.drag_state = DraggingEditState::None;
             self.mouse_down = false;
+            
+            self.bounds.enclose_polygon(&self.polygon);
         }
 
         icon_context.settings_panel_visible = false;
