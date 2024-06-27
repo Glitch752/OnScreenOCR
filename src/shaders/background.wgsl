@@ -41,7 +41,7 @@ const BORDER_WIDTH = 1.0;
 const BORDER_INNER_COLOR = vec4<f32>(0.482, 0.412, 0.745, 1.0);
 const BORDER_OUTER_COLOR = vec4<f32>(0.482, 0.412, 0.745, 0.0);
 
-const VERTEX_HANDLE_CIRCLE_RADIUS = 5.0;
+const VERTEX_HANDLE_CIRCLE_RADIUS = 4.0;
 
 struct SDFResult {
     distance: f32,
@@ -158,7 +158,7 @@ fn alpha_mix(color: vec3<f32>, overlay_color: vec4<f32>) -> vec3<f32> {
 }
 
 fn get_vertex_opacity(vertex_index: i32) -> f32 {
-    return f32((r_locals.vertices[vertex_index].highlight & u32(0xFFFF)) >> u32(16)) / 65535.0;
+    return f32((r_locals.vertices[vertex_index].highlight >> u32(16)) & u32(0xFFFF)) / 65535.0;
 }
 fn get_edge_opacity(vertex_index: i32) -> f32 {
     return f32(r_locals.vertices[vertex_index].highlight & u32(0xFFFF)) / 65535.0;
