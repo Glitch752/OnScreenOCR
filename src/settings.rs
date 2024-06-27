@@ -1,19 +1,51 @@
 use serde::{Deserialize, Serialize};
 
-static OCR_LANGUAGES: [OCRLanguage; 3] = [
-    OCRLanguage { code: "eng", name: "English" },
-    OCRLanguage { code: "eng_slow", name: "English (slow)" },
-    OCRLanguage { code: "deu", name: "German  " }, // Spaces after this are intentional to make the layout look better
-];
-static DEFAULT_OCR_LANGUAGE: OCRLanguage = OCR_LANGUAGES[0];
-
 static SETTINGS_PATH: &str = "settings.bin";
 static TESSERACT_SETTNGS_PATH: &str = "tesseract_settings.toml";
     
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OCRLanguage {
-    pub code: &'static str,
-    pub name: &'static str,
+    pub code: String,
+    pub name: String,
+}
+
+impl OCRLanguage {
+    pub fn new(code: &str, name: &str) -> Self {
+        Self {
+            code: code.to_string(),
+            name: name.to_string()
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Keybind {
+    pub ctrl: bool,
+    pub shift: bool,
+    pub alt: bool,
+    pub meta: bool, // Windows key on Windows, Command key on macOS
+    pub key: char
+}
+
+impl Keybind {
+    pub fn to_string(&self) -> String {
+        let mut string = String::new();
+        if self.ctrl {
+            string.push_str("Ctrl + ");
+        }
+        if self.shift {
+            string.push_str("Shift + ");
+        }
+        if self.alt {
+            string.push_str("Alt + ");
+        }
+        if self.meta {
+            string.push_str("Meta + ");
+        }
+        string.push(self.key);
+
+        string
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,6 +58,8 @@ pub struct SettingsManager {
     pub add_pilcrow_in_preview: bool,
     pub close_on_copy: bool,
     pub auto_copy: bool,
+
+    pub open_keybind: Keybind,
 
     // Don't seriaize with the other settings; it's loaded from a separate file
     #[serde(skip)]
@@ -45,6 +79,8 @@ pub struct TesseractSettings {
     pub ocr_language_code: String,
     pub export_mode: TesseractExportMode,
 
+    pub ocr_languages: Vec<OCRLanguage>,
+
     pub tesseract_parameters: toml::Table
 }
 
@@ -58,19 +94,41 @@ impl Default for TesseractSettings {
                 return Self::default();
             }
 
-            return toml::from_str(&toml_string.unwrap()).unwrap_or_else(|_| {
+            return self::verify(toml::from_str(&toml_string.unwrap()).unwrap_or_else(|_| {
                 eprintln!("Failed to deserialize Tesseract settings, using default settings and overwriting the file");
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
                 Self::default()
-            })
+            })).unwrap_or_else(|err| {
+                eprintln!("Failed to verify Tesseract settings: {}\nUsing default settings and overwriting the file", err);
+                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                Self::default()
+            });
         }
 
-        Self {
-            ocr_language_code: DEFAULT_OCR_LANGUAGE.code.to_string(),
+        let settings = Self  {
+            ocr_language_code: "eng".to_string(),
             tesseract_parameters: toml::Table::new(),
-            export_mode: TesseractExportMode::UTF8
-        }
+            export_mode: TesseractExportMode::UTF8,
+
+            ocr_languages: vec![
+                OCRLanguage::new("eng", "English"),
+                OCRLanguage::new("eng_slow", "English (slow)"),
+                OCRLanguage::new("deu", "German  "), // Spaces after this are intentional to make the layout look better
+            ]
+        };
+
+        settings.save();
+
+        settings
     }
+}
+
+fn verify(settings: TesseractSettings) -> Result<TesseractSettings, String> {
+    if settings.ocr_languages.is_empty() {
+        return Err("No OCR languages are defined".to_string());
+    }
+
+    Ok(settings)
 }
 
 impl TesseractSettings {
@@ -97,6 +155,13 @@ impl TesseractSettings {
 # Note that turning "preserve newlines" off and "Reformat and correct results" will only work with "UTF8"
 # If you don't know what to choose, "UTF8" is probably what you expect.
 export_mode = "#);
+        let encoded = encoded.replacen("[[ocr_languages]]", r#"# Each entry should be a language, with a corresponding [name].traineddata file under /tessdata.
+# Name is an arbitrary string shown in the UI, and code is the language code.
+# To support automatic correction for other languages, add associated dictionary text files
+# to src/correction_data, following the existing conventions. More documentation is to come, and the
+# data/configuration files will probably eventually be moved to a more appropriate location.
+[[ocr_languages]]"#, 1);
+
         std::fs::write(TESSERACT_SETTNGS_PATH, encoded).unwrap();
     }
 
@@ -114,8 +179,8 @@ export_mode = "#);
                 return;
             }
 
-            *self = toml::from_str(&toml_string.unwrap()).unwrap_or_else(|_| {
-                eprintln!("Failed to deserialize Tesseract settings, using default settings and overwriting the file");
+            *self = toml::from_str(&toml_string.unwrap()).unwrap_or_else(|err| {
+                eprintln!("Failed to deserialize Tesseract settings: {}\nUsing default settings and overwriting the file", err.to_string());
                 std::fs::rename(TESSERACT_SETTNGS_PATH, format!("{}.bak", TESSERACT_SETTNGS_PATH)).unwrap();
                 TesseractSettings::default()
             });
@@ -123,15 +188,17 @@ export_mode = "#);
     }
 
     pub fn get_ocr_language_data(&self) -> OCRLanguage {
-        OCR_LANGUAGES.iter().find(|x| x.code == self.ocr_language_code).unwrap().clone()
+        self.ocr_languages.iter().find(|x| x.code == self.ocr_language_code).unwrap().clone()
     }
 
     pub fn ocr_language_increment(&mut self) {
-        self.ocr_language_code = OCR_LANGUAGES[(OCR_LANGUAGES.iter().position(|&x| x.code == self.ocr_language_code).unwrap() + 1) % OCR_LANGUAGES.len()].code.to_string();
+        let current_language_index = self.ocr_languages.iter().position(|x| x.code == self.ocr_language_code).unwrap();
+        self.ocr_language_code = self.ocr_languages[(current_language_index + 1) % self.ocr_languages.len()].code.to_string();
     }
 
     pub fn ocr_language_decrement(&mut self) {
-        self.ocr_language_code = OCR_LANGUAGES[(OCR_LANGUAGES.iter().position(|&x| x.code == self.ocr_language_code).unwrap() + OCR_LANGUAGES.len() - 1) % OCR_LANGUAGES.len()].code.to_string();
+        let current_language_index = self.ocr_languages.iter().position(|x| x.code == self.ocr_language_code).unwrap();
+        self.ocr_language_code = self.ocr_languages[(current_language_index + self.ocr_languages.len() - 1) % self.ocr_languages.len()].code.to_string();
     }
 
     pub fn configure_tesseract(&self, api: &mut leptess::tesseract::TessApi) {
@@ -180,7 +247,15 @@ impl SettingsManager {
             close_on_copy: false,
             auto_copy: false,
 
-            tesseract_settings: TesseractSettings::default()
+            tesseract_settings: TesseractSettings::default(),
+
+            open_keybind: Keybind {
+                ctrl: false,
+                shift: true,
+                alt: false,
+                meta: true,
+                key: 'z'
+            }
         }
     }
 
@@ -192,6 +267,6 @@ impl SettingsManager {
     }
 
     pub fn get_ocr_languages(&self) -> Vec<OCRLanguage> {
-        OCR_LANGUAGES.to_vec()
+        self.tesseract_settings.ocr_languages.to_vec()
     }
 }

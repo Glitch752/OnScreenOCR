@@ -3,7 +3,7 @@
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 use clipboard_image::copy_image_to_clipboard;
-use inputbot::{KeybdKey::*, MouseCursor};
+use inputbot::{KeybdKey, MouseCursor};
 use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
@@ -33,11 +33,19 @@ fn main() {
     let event_loop = EventLoop::new().expect("Unable to create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
 
+    let mut app = App::default();
+    
     let loop_proxy = event_loop.create_proxy();
-    ZKey.bind(move || {
-        if LShiftKey.is_pressed() && LAltKey.is_pressed() {
-            // We need to open the window on the main thread
-            loop_proxy.send_event(()).expect("Unable to send event");
+    KeybdKey::bind_all(move |event| {
+        match inputbot::from_keybd_key(event) {
+            Some(key) => {
+                println!("Key pressed: {:?}", key);
+                // if LShiftKey.is_pressed() && LAltKey.is_pressed() {
+                //     // We need to open the window on the main thread
+                //     loop_proxy.send_event(()).expect("Unable to send event");
+                // }
+            }
+            _ => {}
         }
     });
 
@@ -47,7 +55,7 @@ fn main() {
 
     println!("Listening for keybinds");
     event_loop
-        .run_app(&mut App::default())
+        .run_app(&mut app)
         .expect("Unable to run event loop");
 }
 

@@ -21,7 +21,6 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
 - [ ] A setting to change the OCR keybind
-- [ ] Add OCR language list to tesseract settings file
 - [ ] Ability to drag polygon path with CTRL held
 - [ ] Stay in system tray when closed
 
