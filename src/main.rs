@@ -10,7 +10,7 @@ use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
 use selection::{Selection, SelectionInputResult};
 use undo_stack::UndoStack;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, LazyLock, Mutex};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -18,20 +18,6 @@ use winit::keyboard::{Key, NamedKey};
 use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Cursor, CursorIcon, Fullscreen, Window, WindowId, WindowLevel};
 use renderer::{IconContext, IconEvent};
-
-// This is probably not idiomatic Rust, and there's likely a better way to represent this,
-// but it's the best I could come up with for now.
-pub struct CreationResult<T> {
-    pub object: T,
-    pub errors: Vec<String>
-}
-
-impl<T> CreationResult<T> {
-    fn add_error(mut self, error: &str) -> Self {
-        self.errors.push(error.to_string());
-        self
-    }
-}
 
 mod ocr_handler;
 mod renderer;
@@ -42,6 +28,8 @@ mod settings;
 mod clipboard_image;
 mod undo_stack;
 mod input;
+
+pub static INITIALIZATION_ERRORS: LazyLock<Arc<Mutex<Vec<String>>>> = LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
 fn main() {
     // Only run event loop on user interaction
@@ -85,35 +73,34 @@ struct App {
 
     input_handler: InputHandler,
 
-    undo_stack: UndoStack
+    undo_stack: UndoStack,
+
+    user_feedback_queue: Vec<(String, [f32; 3])>,
 }
 
 impl Default for App {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
-        let icon_context_result = IconContext::new(tx);
+
+        let icon_context = IconContext::new(tx);
         let icon_event_receiver = rx;
 
-        let mut app = App {
+        App {
             window_state: None,
             size: (0, 0),
             selection: Selection::default(),
-            ocr_handler: OCRHandler::new(FormatOptions::from_settings(&icon_context_result.object.settings)),
+            ocr_handler: OCRHandler::new(FormatOptions::from_settings(&icon_context.settings)),
             relative_mouse_pos: (0, 0),
             
-            icon_context: icon_context_result.object,
+            icon_context: icon_context,
             icon_event_receiver,
 
             input_handler: InputHandler::new(),
 
-            undo_stack: UndoStack::new()
-        };
+            undo_stack: UndoStack::new(),
 
-        for err in icon_context_result.errors {
-            app.show_negative_feedback(&err);
+            user_feedback_queue: INITIALIZATION_ERRORS.lock().unwrap().iter().map(|err| (err.clone(), [0.8, 0.3, 0.4])).collect(),
         }
-
-        app
     }
 
 }
@@ -139,6 +126,11 @@ impl App {
 
         let pixels = &state.pixels;
         let shader_renderer = &mut state.shader_renderer;
+
+        if self.user_feedback_queue.len() > 0 {
+            let (message, color) = self.user_feedback_queue.remove(0);
+            shader_renderer.show_user_feedback(message, color);
+        }
 
         self.ocr_handler.update_ocr_preview_text();
 
@@ -230,7 +222,12 @@ impl App {
                     self.hide_window();
                 }
                 IconEvent::RefreshOCRConfiguration => {
+                    INITIALIZATION_ERRORS.lock().unwrap().clear();
                     self.icon_context.settings.tesseract_settings.reload();
+                    for error in INITIALIZATION_ERRORS.lock().unwrap().iter() {
+                        self.show_negative_feedback(&error);
+                    }
+
                     self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
                 }
                 IconEvent::ChangeUsePolygon => {

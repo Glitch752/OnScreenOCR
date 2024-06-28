@@ -21,10 +21,10 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 
 ## TODO
 - [ ] Add support for MacOS and Linux
-- [ ] Feedback for copying to clipboard
 - [ ] Optionally automatically start on boot
 - [ ] Proper installer and uninstaller
 - [ ] Better documentation on how the interaction system, configuration, and probably other parts of the application work
+- [ ] Put data files in a more appropriate absolute location so the application can be run from anywhere
 
 ## Installation
 For now, the way to install is by cloning the repository, building the project, and running it manually.  

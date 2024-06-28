@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::CreationResult;
+use crate::INITIALIZATION_ERRORS;
 
 static SETTINGS_PATH: &str = "settings.bin";
 static TESSERACT_SETTNGS_PATH: &str = "tesseract_settings.toml";
@@ -95,6 +95,14 @@ pub enum TesseractExportMode {
     TSV
 }
 
+fn verify(settings: TesseractSettings) -> Result<TesseractSettings, String> {
+    if settings.ocr_languages.is_empty() {
+        return Err("No OCR languages are defined".to_string());
+    }
+
+    Ok(settings)
+}
+
 #[derive(Debug, Serialize, Clone, Deserialize)]
 pub struct TesseractSettings {
     pub ocr_language_code: String,
@@ -104,42 +112,41 @@ pub struct TesseractSettings {
 
     pub tesseract_parameters: toml::Table
 }
-fn verify(settings: TesseractSettings) -> Result<TesseractSettings, String> {
-    if settings.ocr_languages.is_empty() {
-        return Err("No OCR languages are defined".to_string());
-    }
 
-    Ok(settings)
+impl Default for TesseractSettings {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TesseractSettings {
-    fn new() -> CreationResult<Self> {
+    fn new() -> Self {
         if let Ok(encoded) = std::fs::read(TESSERACT_SETTNGS_PATH) {
             let toml_string = String::from_utf8(encoded);
             if toml_string.is_err() {
                 eprintln!("Failed to decode Tesseract setting string");
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
-                return Self::new().add_error("Failed to decode Tesseract setting string");
+                INITIALIZATION_ERRORS.lock().unwrap().push("Failed to decode Tesseract setting string".to_string());
+                return Self::new();
             }
 
             let toml_result = toml::from_str(&toml_string.unwrap());
             if let Err(error) = toml_result {
                 eprintln!("Failed to deserialize Tesseract settings: {}", error);
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
-                return Self::new().add_error(&format!("Failed to deserialize Tesseract settings: {}", error));
+                INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to deserialize Tesseract settings: {}", error));
+                return Self::new();
             }
 
             let verify_result = self::verify(toml_result.unwrap());
             if let Err(error) = verify_result {
                 eprintln!("Failed to verify Tesseract settings: {}", error);
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
-                return Self::new().add_error(&format!("Failed to verify Tesseract settings: {}", error));
+                INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to verify Tesseract settings: {}", error));
+                return Self::new();
             }
             
-            return CreationResult {
-                object: verify_result.unwrap(),
-                errors: Vec::new()
-            };
+            return verify_result.unwrap();
         }
 
         let settings = Self  {
@@ -156,10 +163,7 @@ impl TesseractSettings {
 
         settings.save();
 
-        CreationResult {
-            object: settings,
-            errors: Vec::new()
-        }
+        settings
     }
 
     fn save(&self) {
@@ -199,45 +203,44 @@ export_mode = "#);
         std::fs::canonicalize(TESSERACT_SETTNGS_PATH).unwrap().to_string_lossy().to_string()
     }
 
-    /// Returns a list of errors that occurred during the reload
-    pub fn reload(&mut self) -> Vec<String> {
+    /// Puts initialization errors in the global error list
+    pub fn reload(&mut self) {
         if let Ok(encoded) = std::fs::read(TESSERACT_SETTNGS_PATH) {
             let toml_string = String::from_utf8(encoded);
             if toml_string.is_err() {
                 eprintln!("Failed to decode Tesseract setting string");
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
-                let result = Self::new().add_error("Failed to decode Tesseract setting string");
-                *self = result.object;
-                return result.errors;
+                INITIALIZATION_ERRORS.lock().unwrap().push("Failed to decode Tesseract setting string".to_string());
+                *self = Self::new();
+                return;
             }
 
             let toml_result = toml::from_str(&toml_string.unwrap());
             if let Err(error) = toml_result {
                 eprintln!("Failed to deserialize Tesseract settings: {}", error);
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
-                let result = Self::new().add_error(&format!("Failed to deserialize Tesseract settings: {}", error));
-                *self = result.object;
-                return result.errors;
+                INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to deserialize Tesseract settings: {}", error));
+                *self = Self::new();
+                return;
             }
 
             let verify_result = self::verify(toml_result.unwrap());
             if let Err(error) = verify_result {
                 eprintln!("Failed to verify Tesseract settings: {}", error);
                 std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
-                let result = Self::new().add_error(&format!("Failed to verify Tesseract settings: {}", error));
-                *self = result.object;
-                return result.errors;
+                INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to verify Tesseract settings: {}", error));
+                *self = Self::new();
+                return;
             }
             
             *self = verify_result.unwrap();
-
-            return Vec::new();
+            return;
         } else {
             eprintln!("Failed to read Tesseract settings, using default settings and overwriting the file");
             std::fs::rename(TESSERACT_SETTNGS_PATH, format!("{}.bak", TESSERACT_SETTNGS_PATH)).unwrap();
-            let result = TesseractSettings::new();
-            *self = result.object;
-            return result.errors;
+            *self = TesseractSettings::new();
+            INITIALIZATION_ERRORS.lock().unwrap().push("Failed to read Tesseract settings, using default settings and overwriting the file".to_string());
+            return;
         }
     }
 
@@ -276,8 +279,7 @@ export_mode = "#);
 }
 
 impl SettingsManager {
-    pub fn new() -> CreationResult<Self> {
-        let mut errors = Vec::new();
+    pub fn new() -> Self {
         if let Ok(encoded) = std::fs::read(SETTINGS_PATH) {
             let deserialized = bincode::deserialize(&encoded).map(|mut val: SettingsManager| {
                 val.open_keybind_string = val.open_keybind.lock().unwrap().to_string();
@@ -287,15 +289,15 @@ impl SettingsManager {
             if let Err(error) = deserialized {
                 eprintln!("Failed to deserialize settings, using default settings and overwriting the file");
                 std::fs::remove_file(SETTINGS_PATH).unwrap();
-                errors.push(format!("Failed to deserialize settings; using defaults: {}", error.to_string()));
+                INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to deserialize settings; using defaults: {}", error.to_string()));
+                return Self::new();
             }
+
+            return deserialized.unwrap();
         }
 
-        let tesseract_settings_result = TesseractSettings::new();
-        errors.extend(tesseract_settings_result.errors);
-
         // Default settings
-        let object = Self {
+        Self {
             use_polygon: false,
             maintain_newline: true,
             reformat_and_correct: true,
@@ -304,15 +306,10 @@ impl SettingsManager {
             close_on_copy: false,
             auto_copy: false,
 
-            tesseract_settings: tesseract_settings_result.object,
+            tesseract_settings: TesseractSettings::new(),
 
             open_keybind: Arc::new(Mutex::new(Keybind::default())),
             open_keybind_string: "Shift + Alt + Z".to_string()
-        };
-
-        CreationResult {
-            object,
-            errors
         }
     }
 

@@ -5,7 +5,7 @@ use icon_layout::get_icon_layouts;
 use pixels::{wgpu::{self, util::DeviceExt, Device, Queue}, Pixels, PixelsContext};
 use winit::event::ElementState;
 
-use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::{BrushBuilder, Matrix, TextBrush}, CreationResult};
+use crate::{selection::Bounds, settings::SettingsManager, wgpu_text::{BrushBuilder, Matrix, TextBrush}};
 use super::animation::SmoothMoveFadeAnimation;
 use icon_layout_engine::{create_icon, IconLayouts};
 
@@ -26,20 +26,15 @@ pub struct IconContext {
 }
 
 impl IconContext {
-    pub fn new(channel: mpsc::Sender<IconEvent>) -> CreationResult<Self> {
-        let settings_result = SettingsManager::new();
-        let ctx = Self {
-            settings: settings_result.object,
+    pub fn new(channel: mpsc::Sender<IconEvent>) -> Self {
+        Self {
+            settings: SettingsManager::new(),
             settings_panel_visible: false,
             copy_key_held: false,
             has_selection: false,
             screenshot_key_held: false,
             channel
-        };
-        return CreationResult {
-            object: ctx,
-            errors: settings_result.errors
-        };
+        }
     }
 
     pub fn reset(&mut self) {

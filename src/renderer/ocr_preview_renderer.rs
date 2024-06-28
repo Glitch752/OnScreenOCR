@@ -227,7 +227,7 @@ impl OCRPreviewRenderer {
             self.current_feedback_start_time = Instant::now();
         }
 
-        let visible = self.current_feedback_start_time.elapsed().as_secs_f32() < 1.5;
+        let visible = self.current_feedback_start_time.elapsed().as_secs_f32() < self.active_feedback_text.as_ref().unwrap().len() as f32 * 0.03 + 1.0;
         self.feedback_text_anim.update(delta, visible);
         self.feedback_text_anim.fade_move_direction = MoveDirection::Up;
 
