@@ -7,6 +7,8 @@ use image::{GenericImage, GenericImageView};
 const DOWNSCALE_SIZE: f32 = 80.0;
 
 fn main() {  
+    embed_resource::compile("tray_icon.rc", embed_resource::NONE);
+
     let generate_icon_atlas = env::var("GENERATE_ICON_ATLAS")
         .map(|v| v == "1")
         .unwrap_or(false);
