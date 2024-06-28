@@ -20,9 +20,9 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 ## TODO
 - [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
-- [ ] A setting to change the OCR keybind
 - [ ] Ability to drag polygon path with CTRL held
 - [ ] Stay in system tray when closed
+- [ ] When turning polygon mode on, don't delete selection, and when turning it off, convert to a bounding box
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

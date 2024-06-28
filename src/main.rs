@@ -619,7 +619,7 @@ impl ApplicationHandler for App {
                 }
 
                 self.relative_mouse_pos = (position.x as i32, position.y as i32);
-                let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size);
+                let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size, &mut self.icon_context);
 
                 if changed {
                     self.window_state.as_ref().unwrap().window.request_redraw();
