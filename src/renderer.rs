@@ -69,6 +69,14 @@ impl Renderer {
         Ok(())
     }
 
+    pub(crate) fn show_user_feedback(
+        &mut self,
+        message: String,
+        color: [f32; 3]
+    ) {
+        self.ocr_preview_renderer.show_user_feedback(message, color);
+    }
+
     pub(crate) fn mouse_event(&mut self, mouse_pos: (i32, i32), state: ElementState, icon_context: &mut IconContext) -> bool {
         self.icon_renderer.mouse_event(mouse_pos, state, icon_context)
     }

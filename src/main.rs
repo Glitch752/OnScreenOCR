@@ -19,6 +19,20 @@ use winit::platform::windows::WindowAttributesExtWindows;
 use winit::window::{Cursor, CursorIcon, Fullscreen, Window, WindowId, WindowLevel};
 use renderer::{IconContext, IconEvent};
 
+// This is probably not idiomatic Rust, and there's likely a better way to represent this,
+// but it's the best I could come up with for now.
+pub struct CreationResult<T> {
+    pub object: T,
+    pub errors: Vec<String>
+}
+
+impl<T> CreationResult<T> {
+    fn add_error(mut self, error: &str) -> Self {
+        self.errors.push(error.to_string());
+        self
+    }
+}
+
 mod ocr_handler;
 mod renderer;
 mod screenshot;
@@ -77,23 +91,29 @@ struct App {
 impl Default for App {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
-        let icon_context = IconContext::new(tx);
+        let icon_context_result = IconContext::new(tx);
         let icon_event_receiver = rx;
 
-        App {
+        let mut app = App {
             window_state: None,
             size: (0, 0),
             selection: Selection::default(),
-            ocr_handler: OCRHandler::new(FormatOptions::from_settings(&icon_context.settings)),
+            ocr_handler: OCRHandler::new(FormatOptions::from_settings(&icon_context_result.object.settings)),
             relative_mouse_pos: (0, 0),
             
-            icon_context,
+            icon_context: icon_context_result.object,
             icon_event_receiver,
 
             input_handler: InputHandler::new(),
 
             undo_stack: UndoStack::new()
+        };
+
+        for err in icon_context_result.errors {
+            app.show_negative_feedback(&err);
         }
+
+        app
     }
 
 }
@@ -237,6 +257,8 @@ impl App {
         if self.icon_context.settings.close_on_copy {
             self.hide_window();
         }
+
+        self.show_positive_feedback("Copied to clipboard");
     }
 
     fn attempt_screenshot(&mut self) {
@@ -271,6 +293,8 @@ impl App {
         if self.icon_context.settings.close_on_copy {
             self.hide_window();
         }
+
+        self.show_positive_feedback("Screenshot copied to clipboard");
     }
 
     fn hide_window(&mut self) {
@@ -289,6 +313,17 @@ impl App {
         if self.undo_stack.redo(&mut self.selection).is_ok() {
             self.ocr_handler.ocr_preview_text = None;
             self.ocr_handler.selection_changed(&self.selection);
+        }
+    }
+    
+    fn show_positive_feedback(&mut self, message: &str) {
+        if let Some(state) = &mut self.window_state {
+            state.shader_renderer.show_user_feedback(message.to_string(), [0.3, 0.8, 0.4]);
+        }
+    }
+    fn show_negative_feedback(&mut self, message: &str) {
+        if let Some(state) = &mut self.window_state {
+            state.shader_renderer.show_user_feedback(message.to_string(), [0.8, 0.3, 0.4]);
         }
     }
 }

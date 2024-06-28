@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use glyph_brush::{ab_glyph::FontRef, BuiltInLineBreaker, HorizontalAlign, OwnedSection, OwnedText};
 use pixels::{wgpu, PixelsContext};
 
@@ -12,6 +14,13 @@ pub(crate) struct OCRPreviewRenderer {
 
     text_brush: TextBrush<FontRef<'static>>,
     should_render_text: bool,
+
+    active_feedback_text: Option<String>,
+    active_feedback_color: [f32; 3],
+    feedback_text_anim: SmoothMoveFadeAnimation,
+    current_feedback_start_time: Instant,
+
+    feedback_text_queue: Vec<(String, [f32; 3])>
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +50,12 @@ impl OCRPreviewRenderer {
                     pixels.render_texture_format()
                 ),
             should_render_text: false,
+
+            active_feedback_text: None,
+            active_feedback_color: [1.0, 1.0, 1.0],
+            feedback_text_anim: SmoothMoveFadeAnimation::new(false, MoveDirection::Down, 10.),
+            feedback_text_queue: vec![],
+            current_feedback_start_time: Instant::now()
         }
     }
     
@@ -118,7 +133,7 @@ impl OCRPreviewRenderer {
         }
     }
 
-    pub(crate) fn get_ocr_section(
+    fn get_ocr_section(
         &mut self,
         ocr_preview_text: Option<String>,
         window_size: (u32, u32),
@@ -196,6 +211,54 @@ impl OCRPreviewRenderer {
         self.text_brush.resize_view(width as f32, height as f32, pixels.queue());
     }
 
+    fn get_feedback_text(
+        &mut self,
+        delta: std::time::Duration,
+        window_size: (u32, u32)
+    ) -> Option<OwnedSection> {
+        if self.active_feedback_text.is_none() {
+            if self.feedback_text_queue.is_empty() {
+                self.feedback_text_anim.update(delta, false);
+                return None;
+            }
+            let (text, color) = self.feedback_text_queue.remove(0);
+            self.active_feedback_text = Some(text);
+            self.active_feedback_color = color;
+            self.current_feedback_start_time = Instant::now();
+        }
+
+        let visible = self.current_feedback_start_time.elapsed().as_secs_f32() < 1.5;
+        self.feedback_text_anim.update(delta, visible);
+        self.feedback_text_anim.fade_move_direction = MoveDirection::Up;
+
+        let section = Some(OwnedSection::default()
+            .add_text(OwnedText::new(self.active_feedback_text.clone().unwrap()).with_color([
+                self.active_feedback_color[0],
+                self.active_feedback_color[1],
+                self.active_feedback_color[2],
+                0.9 * self.feedback_text_anim.get_opacity()
+            ]).with_scale(24.0))
+            .with_screen_position(self.feedback_text_anim.move_point((window_size.0 as f32 / 2., 65.)))
+            .with_layout(glyph_brush::Layout::default()
+                .h_align(glyph_brush::HorizontalAlign::Center)
+            )
+        );
+
+        if !self.feedback_text_anim.visible_at_all() {
+            self.active_feedback_text = None;
+        }
+
+        section
+    }
+
+    pub(crate) fn show_user_feedback(
+        &mut self,
+        text: String,
+        color: [f32; 3]
+    ) -> () {
+        self.feedback_text_queue.push((text, color));
+    }
+
     pub(crate) fn update(
         &mut self,
         context: &PixelsContext,
@@ -209,10 +272,21 @@ impl OCRPreviewRenderer {
         let device = &context.device;
         let queue = &context.queue;
 
+        let mut sections = Vec::new();
+        
         let ocr_section = self.get_ocr_section(ocr_preview_text, window_size, icon_renderer, delta, bounds, icon_context);
-        self.should_render_text = ocr_section.is_some();
         if ocr_section.is_some() {
-            self.text_brush.queue(device, queue, vec![ocr_section.as_ref().unwrap()]).unwrap();
+            sections.push(ocr_section.as_ref().unwrap());
+        }
+
+        let feedback_text = self.get_feedback_text(delta, window_size);
+        if feedback_text.is_some() {
+            sections.push(feedback_text.as_ref().unwrap());
+        }
+
+        self.should_render_text = sections.len() > 0;
+        if self.should_render_text {
+            self.text_brush.queue(device, queue, sections).unwrap();
         }
     }
 

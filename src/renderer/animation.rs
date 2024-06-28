@@ -106,7 +106,7 @@ impl SmoothFadeAnimation {
             self.visible_ratio = target_ratio;
         }
 
-        if self.visible_ratio < 0.01 {
+        if self.visible_ratio < 0.005 {
             self.visible_ratio = 0.;
         }
     }

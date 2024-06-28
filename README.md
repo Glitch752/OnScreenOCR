@@ -8,7 +8,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Support for multiple OCR languages
 - Result fixing and reformatting
   - Reformat to remove hyphens from end of lines, moving the word to fit entirely on the line
-  - More todo
+  - More to come in the future! If you have any suggestions or find common formatting failure points/annoyances, please open an issue!
 - Ability to copy without newlines
 - Ability to fine-tune Tesseract's parameters
   - Ability to export in other Tesseract formats (TSV, Alto, HOCR)
@@ -17,13 +17,14 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Keybinds for common actions (Ctrl+C to copy, Ctrl+Z to undo, arrows to move selection, etc.)
 - Full undo/redo history
 - Stays in system tray when closed
+- Numerous intuitive selection-related interactions, including drawing outlines, shifting edges/vertices, removing edges/vertices, and more.
 
 ## TODO
 - [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
-- [ ] Ability to drag polygon path with CTRL held
 - [ ] Optionally automatically start on boot
 - [ ] Proper installer and uninstaller
+- [ ] Better documentation on how the interaction system, configuration, and probably other parts of the application work
 
 ## Installation
 For now, the way to install is by cloning the repository, building the project, and running it manually.  
