@@ -117,17 +117,17 @@ pub fn get_icon_layouts() -> IconLayouts {
 
     settings_layout.add_layout({
         let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-        layout.add_text(IconText::new("Manual OCR configuration".to_string()));
+        layout.add_text(IconText::new("Advanced OCR configuration".to_string()));
         layout.add_icon({
             let mut icon = create_icon!("open", IconBehavior::Click);
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::OpenOCRConfiguration).expect("Unable to send open OCR configuration event"); }));
-            icon.tooltip_text = Some("Open Tesseract configuration file".to_string());
+            icon.tooltip_text = Some("Open configuration file".to_string());
             icon
         });
         layout.add_icon({
             let mut icon = create_icon!("refresh", IconBehavior::Click);
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| { ctx.channel.send(IconEvent::RefreshOCRConfiguration).expect("Unable to send refresh OCR configuration event"); }));
-            icon.tooltip_text = Some("Refresh Tesseract configuration".to_string());
+            icon.tooltip_text = Some("Refresh configuration from file".to_string());
             icon
         });
         layout

@@ -136,7 +136,9 @@ enum DraggingEditState {
     NewBox(NewBoxEditState),
     ShiftSelection(ShiftSelectionEditState),
     PolygonVertex(PolygonVertexEditState),
-    ShiftPolygonEdge(PolygonEdgeEditState)
+    ShiftPolygonEdge(PolygonEdgeEditState),
+
+    CreatePolygon,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -216,13 +218,13 @@ impl Selection {
             }
         }
 
-        if !self.mouse_down {
-            return false;
-        }
-
         match self.drag_state {
             DraggingEditState::None => {},
             DraggingEditState::NewBox(ref state) => {
+                if !self.mouse_down {
+                    return false;
+                }
+
                 self.bounds.x = state.start_origin.0 as i32;
                 self.bounds.y = state.start_origin.1 as i32;
                 self.bounds.width = x - self.bounds.x;
@@ -238,6 +240,10 @@ impl Selection {
                 }
             }
             DraggingEditState::ShiftSelection(ref state) => {
+                if !self.mouse_down {
+                    return false;
+                }
+                
                 let (start_x, start_y) = state.start_location;
                 let (start_bounds_x, start_bounds_y) = state.start_origin;
                 let (dx, dy) = (x - start_x, y - start_y);
@@ -264,6 +270,10 @@ impl Selection {
                 self.bounds.enclose_polygon(&self.polygon);
             }
             DraggingEditState::ShiftPolygonEdge(ref edge) => {
+                if !self.mouse_down {
+                    return false;
+                }
+
                 if icon_context.settings.use_polygon {
                     let (start_x, start_y) = edge.start_location;
                     let (start_bounds_x, start_bounds_y) = edge.start_origin;
@@ -302,6 +312,10 @@ impl Selection {
                 self.bounds.enclose_polygon(&self.polygon);
             }
             DraggingEditState::PolygonVertex(ref vertex) => {
+                if !self.mouse_down {
+                    return false;
+                }
+
                 if icon_context.settings.use_polygon {
                     self.polygon.vertices[vertex.vertex_index].x = x as f32;
                     self.polygon.vertices[vertex.vertex_index].y = y as f32;
@@ -346,6 +360,22 @@ impl Selection {
                 }
 
                 self.bounds.enclose_polygon(&self.polygon);
+            }
+
+            DraggingEditState::CreatePolygon => {
+                if self.polygon.vertices.len() <= 1 {
+                    self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
+                }
+
+                let last_vertex = self.polygon.vertices.iter_mut().last().unwrap();
+                last_vertex.x = x as f32;
+                last_vertex.y = y as f32;
+
+                self.bounds.enclose_polygon(&self.polygon);
+
+                if !self.ctrl_held {
+                    self.drag_state = DraggingEditState::None;
+                }
             }
         }
 
@@ -454,17 +484,24 @@ impl Selection {
                 PolygonHitResult::None => {
                     // Create a new box
                     if !self.shift_held {
-                        self.bounds.x = x;
-                        self.bounds.y = y;
-                        self.bounds.width = 0;
-                        self.bounds.height = 0;
-                        self.polygon.set_from_bounds(&self.bounds);
+                        if self.ctrl_held && icon_context.settings.use_polygon {
+                            self.polygon.clear();
+                            self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
+                            self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
+                            self.drag_state = DraggingEditState::CreatePolygon;
+                        } else {
+                            self.bounds.x = x;
+                            self.bounds.y = y;
+                            self.bounds.width = 0;
+                            self.bounds.height = 0;
+                            self.polygon.set_from_bounds(&self.bounds);
 
-                        completely_moved = true;
-                        self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
-                            start_location: (x, y),
-                            start_origin: self.polygon.get_origin()
-                        });
+                            completely_moved = true;
+                            self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
+                                start_location: (x, y),
+                                start_origin: self.polygon.get_origin()
+                            });
+                        }
                     } else {
                         self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
                             start_location: (x, y),
@@ -498,7 +535,11 @@ impl Selection {
                         if self.should_merge_surrounding_edges(next_vertex_index).is_some() {
                             self.polygon.vertices.remove(next_vertex_index);
                         }
-    
+
+                        if self.polygon.vertices.len() < 3 {
+                            self.polygon.vertices.clear();
+                        }
+
                         self.polygon.deduplicate();
                     }
                 }
@@ -509,14 +550,21 @@ impl Selection {
                     if self.should_merge_surrounding_edges((edge.edge_index + 1) % self.polygon.vertices.len()).is_some() {
                         self.polygon.vertices.remove((edge.edge_index + 1) % self.polygon.vertices.len());
                     }
+
+                    if self.polygon.vertices.len() < 3 {
+                        self.polygon.vertices.clear();
+                    }
+
                     self.polygon.deduplicate();
                 }
                 _ => {}
             }
-            self.drag_state = DraggingEditState::None;
-            self.mouse_down = false;
-            
-            self.bounds.enclose_polygon(&self.polygon);
+            if self.drag_state != DraggingEditState::CreatePolygon {
+                self.drag_state = DraggingEditState::None;
+                self.mouse_down = false;
+                
+                self.bounds.enclose_polygon(&self.polygon);
+            }
         }
 
         icon_context.settings_panel_visible = false;
@@ -797,8 +845,42 @@ impl Polygon {
             }
         }
 
-        if self.vertices.len() < 3 {
-            self.vertices.clear();
+        let max_vertices = 5;
+        if self.vertices.len() > max_vertices {
+            // Remove the least important vertices.
+            // Importance is determined by surrounding edge distance and surrounding angle.
+            while self.vertices.len() > max_vertices {
+                let mut min_importance = f32::INFINITY;
+                let mut min_importance_index = 0;
+                for i in 0..self.vertices.len() {
+                    let prev_vertex = &self.vertices[(i + self.vertices.len() - 1) % self.vertices.len()];
+                    let next_vertex = &self.vertices[(i + 1) % self.vertices.len()];
+                    let vertex = &self.vertices[i];
+
+                    let prev_dx = vertex.x - prev_vertex.x;
+                    let prev_dy = vertex.y - prev_vertex.y;
+                    let next_dx = next_vertex.x - vertex.x;
+                    let next_dy = next_vertex.y - vertex.y;
+
+                    let prev_angle = prev_dy.atan2(prev_dx);
+                    let next_angle = next_dy.atan2(next_dx);
+
+                    let angle_diff = (prev_angle - next_angle).abs();
+                    let angle_margin = 10.0;
+                    let angle_importance = angle_diff / angle_margin;
+
+                    let edge_length = (prev_dx.powi(2) + prev_dy.powi(2)).sqrt() + (next_dx.powi(2) + next_dy.powi(2)).sqrt();
+                    let edge_importance = edge_length / 100.0;
+
+                    let importance = angle_importance + edge_importance;
+                    if importance < min_importance {
+                        min_importance = importance;
+                        min_importance_index = i;
+                    }
+                }
+
+                self.vertices.remove(min_importance_index);
+            }
         }
     }
 
