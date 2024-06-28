@@ -8,7 +8,7 @@ use inputbot::MouseCursor;
 use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
-use selection::Selection;
+use selection::{Selection, SelectionInputResult};
 use undo_stack::UndoStack;
 use std::sync::mpsc;
 use winit::application::ApplicationHandler;
@@ -464,18 +464,34 @@ impl ApplicationHandler for App {
 
                 if self.input_handler.keyboard_event(&event) {
                     return;
-                } 
+                }
+
+                let result = self.selection.keyboard_event(&event);
+                match result {
+                    SelectionInputResult::Changed => {
+                        self.ocr_handler.selection_changed(&self.selection);
+                        self.undo_stack.take_snapshot(&self.selection);
+                        return;
+                    }
+                    SelectionInputResult::CompletelyMoved => {
+                        self.ocr_handler.ocr_preview_text = None;
+                        self.ocr_handler.selection_changed(&self.selection);
+                        self.undo_stack.take_snapshot(&self.selection);
+                        return;
+                    }
+                    SelectionInputResult::SelectionFinished => {
+                        if self.icon_context.settings.auto_copy {
+                            self.attempt_copy();
+                        }
+                        self.undo_stack.take_snapshot(&self.selection);
+                        return;
+                    }
+                    _ => ()
+                }
 
                 match (event.logical_key.as_ref(), self.selection.shift_held, self.selection.ctrl_held) {
                     (Key::Named(NamedKey::Escape), _, _) => {
                         self.hide_window();
-                    }
-                    (Key::Named(NamedKey::Shift), _, _) => {
-                        self.selection.shift_held = event.state == winit::event::ElementState::Pressed;
-                    }
-                    (Key::Named(NamedKey::Control), _, _) => {
-                        self.selection.ctrl_held =
-                            event.state == winit::event::ElementState::Pressed;
                     }
                     (Key::Named(NamedKey::Tab), false, false) => {
                         if event.state == winit::event::ElementState::Pressed {
@@ -598,11 +614,12 @@ impl ApplicationHandler for App {
                 }
 
                 if !was_handled {
-                    if self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context) {
+                    let result = self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context);
+                    if result == SelectionInputResult::CompletelyMoved {
                         self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                     }
                     self.ocr_handler.selection_changed(&self.selection);
-                    if state == ElementState::Released {
+                    if result == SelectionInputResult::SelectionFinished && state == ElementState::Released {
                         if self.icon_context.settings.auto_copy {
                             self.attempt_copy();
                         }
@@ -620,10 +637,22 @@ impl ApplicationHandler for App {
                 }
 
                 self.relative_mouse_pos = (position.x as i32, position.y as i32);
-                let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size, &mut self.icon_context);
+                let result: SelectionInputResult = self.selection.cursor_moved(self.relative_mouse_pos, self.size, &mut self.icon_context);
 
-                if changed {
-                    self.ocr_handler.selection_changed(&self.selection);
+                match result {
+                    SelectionInputResult::Changed => {
+                        self.ocr_handler.selection_changed(&self.selection);
+                    }
+                    SelectionInputResult::CompletelyMoved => {
+                        self.ocr_handler.ocr_preview_text = None;
+                        self.ocr_handler.selection_changed(&self.selection);
+                    }
+                    SelectionInputResult::SelectionFinished => {
+                        if self.icon_context.settings.auto_copy {
+                            self.attempt_copy();
+                        }
+                    }
+                    _ => ()
                 }
             }
             _ => (),

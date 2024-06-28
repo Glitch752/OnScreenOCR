@@ -1,4 +1,4 @@
-use winit::event::{ElementState, MouseButton};
+use winit::{event::{ElementState, KeyEvent, MouseButton}, keyboard::{Key, NamedKey}};
 
 use crate::renderer::{IconContext, SmoothFadeAnimation};
 
@@ -180,6 +180,14 @@ pub(crate) struct Selection {
     drag_state: DraggingEditState,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum SelectionInputResult {
+    Nothing,
+    Changed,
+    CompletelyMoved,
+    SelectionFinished
+}
+
 impl Selection {
     pub fn reset(&mut self) {
         self.polygon.clear();
@@ -198,7 +206,7 @@ impl Selection {
         mouse_position: (i32, i32),
         screen_size: (u32, u32),
         icon_context: &mut IconContext
-    ) -> bool {
+    ) -> SelectionInputResult {
         // If shift is held, move the selection instead of resizing
         let (x, y) = (mouse_position.0, mouse_position.1);
 
@@ -222,7 +230,7 @@ impl Selection {
             DraggingEditState::None => {},
             DraggingEditState::NewBox(ref state) => {
                 if !self.mouse_down {
-                    return false;
+                    return SelectionInputResult::Nothing;
                 }
 
                 self.bounds.x = state.start_origin.0 as i32;
@@ -238,10 +246,11 @@ impl Selection {
                         from_edge: false
                     });
                 }
+                return SelectionInputResult::Changed;
             }
             DraggingEditState::ShiftSelection(ref state) => {
                 if !self.mouse_down {
-                    return false;
+                    return SelectionInputResult::Nothing;
                 }
                 
                 let (start_x, start_y) = state.start_location;
@@ -268,10 +277,11 @@ impl Selection {
                 }
                 
                 self.bounds.enclose_polygon(&self.polygon);
+                return SelectionInputResult::Changed;
             }
             DraggingEditState::ShiftPolygonEdge(ref edge) => {
                 if !self.mouse_down {
-                    return false;
+                    return SelectionInputResult::Nothing;
                 }
 
                 if icon_context.settings.use_polygon {
@@ -310,10 +320,11 @@ impl Selection {
                 }
 
                 self.bounds.enclose_polygon(&self.polygon);
+                return SelectionInputResult::Changed;
             }
             DraggingEditState::PolygonVertex(ref vertex) => {
                 if !self.mouse_down {
-                    return false;
+                    return SelectionInputResult::Nothing;
                 }
 
                 if icon_context.settings.use_polygon {
@@ -360,6 +371,7 @@ impl Selection {
                 }
 
                 self.bounds.enclose_polygon(&self.polygon);
+                return SelectionInputResult::Changed;
             }
 
             DraggingEditState::CreatePolygon => {
@@ -374,12 +386,14 @@ impl Selection {
                 self.bounds.enclose_polygon(&self.polygon);
 
                 if !self.ctrl_held {
-                    self.drag_state = DraggingEditState::None;
+                    self.end_polygon_creation();
+                    return SelectionInputResult::SelectionFinished;
                 }
+                return SelectionInputResult::Changed;
             }
         }
 
-        true
+        SelectionInputResult::Nothing
     }
 
     pub fn get_nearest_vertex_index(&self, x: i32, y: i32) -> usize {
@@ -449,67 +463,72 @@ impl Selection {
         button: MouseButton,
         mouse_position: (i32, i32),
         icon_context: &mut IconContext
-    ) -> bool {
+    ) -> SelectionInputResult {
         let (x, y) = (mouse_position.0, mouse_position.1);
-        let mut completely_moved = false;
+
+        let mut result = SelectionInputResult::Nothing;
 
         if state == winit::event::ElementState::Pressed {
-            let hit = self.detect_polygon_hit(mouse_position);
-            match hit {
-                PolygonHitResult::Vertex(index) => {
-                    if button == MouseButton::Right && icon_context.settings.use_polygon {
-                        if self.polygon.vertices.len() <= 3 {
-                            return false;
-                        }
-                        self.polygon.vertices.remove(index);
-                    } else {
-                        self.drag_state = DraggingEditState::PolygonVertex(PolygonVertexEditState {
-                            start_location: (x, y),
-                            start_origin: self.polygon.vertices[index].pos_tuple(),
-                            vertex_index: index
-                        });
-                    }
-                },
-                PolygonHitResult::Edge(index) => {
-                    if button == MouseButton::Right && icon_context.settings.use_polygon {
-                        if self.polygon.vertices.len() <= 4 {
-                            return false;
-                        }
-                        self.polygon.vertices.remove(index);
-                        self.polygon.vertices.remove(index % self.polygon.vertices.len());
-                    } else {
-                        self.check_edge_split_input(x, y, index, icon_context.settings.use_polygon);
-                    }
-                },
-                PolygonHitResult::None => {
-                    // Create a new box
-                    if !self.shift_held {
-                        if self.ctrl_held && icon_context.settings.use_polygon {
-                            self.polygon.clear();
-                            self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
-                            self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
-                            self.drag_state = DraggingEditState::CreatePolygon;
+            if self.drag_state == DraggingEditState::CreatePolygon {
+                self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
+            } else {
+                let hit = self.detect_polygon_hit(mouse_position);
+                match hit {
+                    PolygonHitResult::Vertex(index) => {
+                        if button == MouseButton::Right && icon_context.settings.use_polygon {
+                            if self.polygon.vertices.len() <= 3 {
+                                return SelectionInputResult::Nothing;
+                            }
+                            self.polygon.vertices.remove(index);
                         } else {
-                            self.bounds.x = x;
-                            self.bounds.y = y;
-                            self.bounds.width = 0;
-                            self.bounds.height = 0;
-                            self.polygon.set_from_bounds(&self.bounds);
-
-                            completely_moved = true;
-                            self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
+                            self.drag_state = DraggingEditState::PolygonVertex(PolygonVertexEditState {
                                 start_location: (x, y),
-                                start_origin: self.polygon.get_origin()
+                                start_origin: self.polygon.vertices[index].pos_tuple(),
+                                vertex_index: index
                             });
                         }
-                    } else {
-                        self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
-                            start_location: (x, y),
-                            start_origin: self.polygon.get_origin(),
-                            from_edge: false
-                        });
+                    },
+                    PolygonHitResult::Edge(index) => {
+                        if button == MouseButton::Right && icon_context.settings.use_polygon {
+                            if self.polygon.vertices.len() <= 4 {
+                                return SelectionInputResult::Nothing;
+                            }
+                            self.polygon.vertices.remove(index);
+                            self.polygon.vertices.remove(index % self.polygon.vertices.len());
+                        } else {
+                            self.check_edge_split_input(x, y, index, icon_context.settings.use_polygon);
+                        }
+                    },
+                    PolygonHitResult::None => {
+                        // Create a new box
+                        if !self.shift_held {
+                            if self.ctrl_held && icon_context.settings.use_polygon {
+                                self.polygon.clear();
+                                self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
+                                self.polygon.vertices.push(Vertex::new(x as f32, y as f32));
+                                self.drag_state = DraggingEditState::CreatePolygon;
+                            } else {
+                                self.bounds.x = x;
+                                self.bounds.y = y;
+                                self.bounds.width = 0;
+                                self.bounds.height = 0;
+                                self.polygon.set_from_bounds(&self.bounds);
 
-                        self.bounds.enclose_polygon(&self.polygon);
+                                result = SelectionInputResult::CompletelyMoved;
+                                self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
+                                    start_location: (x, y),
+                                    start_origin: self.polygon.get_origin()
+                                });
+                            }
+                        } else {
+                            self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
+                                start_location: (x, y),
+                                start_origin: self.polygon.get_origin(),
+                                from_edge: false
+                            });
+
+                            self.bounds.enclose_polygon(&self.polygon);
+                        }
                     }
                 }
             }
@@ -560,6 +579,8 @@ impl Selection {
                 _ => {}
             }
             if self.drag_state != DraggingEditState::CreatePolygon {
+                result = SelectionInputResult::SelectionFinished;
+
                 self.drag_state = DraggingEditState::None;
                 self.mouse_down = false;
                 
@@ -569,7 +590,35 @@ impl Selection {
 
         icon_context.settings_panel_visible = false;
 
-        completely_moved
+        return result;
+    }
+
+    pub fn keyboard_event(&mut self, event: &KeyEvent) -> SelectionInputResult {
+        match event.logical_key.as_ref() {
+            Key::Named(NamedKey::Shift) => {
+                self.shift_held = event.state == winit::event::ElementState::Pressed;
+            }
+            Key::Named(NamedKey::Control) => {
+                self.ctrl_held = event.state == winit::event::ElementState::Pressed;
+                if self.drag_state == DraggingEditState::CreatePolygon && !self.ctrl_held {
+                    self.end_polygon_creation();
+                    return SelectionInputResult::SelectionFinished;
+                }
+            }
+            _ => {
+                return SelectionInputResult::Nothing;
+            }
+        }
+        SelectionInputResult::Nothing
+    }
+
+    fn end_polygon_creation(&mut self) {
+        if self.polygon.vertices.len() > 2 {
+            self.polygon.vertices.pop();
+        } else {
+            self.polygon.clear();
+        }
+        self.drag_state = DraggingEditState::None;
     }
 
     fn should_merge_surrounding_edges(&self, vertex_index: usize) -> Option<(f32, f32)> {
@@ -842,44 +891,6 @@ impl Polygon {
                 self.vertices.remove(i);
             } else {
                 i += 1;
-            }
-        }
-
-        let max_vertices = 5;
-        if self.vertices.len() > max_vertices {
-            // Remove the least important vertices.
-            // Importance is determined by surrounding edge distance and surrounding angle.
-            while self.vertices.len() > max_vertices {
-                let mut min_importance = f32::INFINITY;
-                let mut min_importance_index = 0;
-                for i in 0..self.vertices.len() {
-                    let prev_vertex = &self.vertices[(i + self.vertices.len() - 1) % self.vertices.len()];
-                    let next_vertex = &self.vertices[(i + 1) % self.vertices.len()];
-                    let vertex = &self.vertices[i];
-
-                    let prev_dx = vertex.x - prev_vertex.x;
-                    let prev_dy = vertex.y - prev_vertex.y;
-                    let next_dx = next_vertex.x - vertex.x;
-                    let next_dy = next_vertex.y - vertex.y;
-
-                    let prev_angle = prev_dy.atan2(prev_dx);
-                    let next_angle = next_dy.atan2(next_dx);
-
-                    let angle_diff = (prev_angle - next_angle).abs();
-                    let angle_margin = 10.0;
-                    let angle_importance = angle_diff / angle_margin;
-
-                    let edge_length = (prev_dx.powi(2) + prev_dy.powi(2)).sqrt() + (next_dx.powi(2) + next_dy.powi(2)).sqrt();
-                    let edge_importance = edge_length / 100.0;
-
-                    let importance = angle_importance + edge_importance;
-                    if importance < min_importance {
-                        min_importance = importance;
-                        min_importance_index = i;
-                    }
-                }
-
-                self.vertices.remove(min_importance_index);
             }
         }
     }
