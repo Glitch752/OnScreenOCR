@@ -120,7 +120,7 @@ impl App {
         let pixels = &state.pixels;
         let shader_renderer = &mut state.shader_renderer;
 
-        let ocr_text_changed = self.ocr_handler.update_ocr_preview_text();
+        self.ocr_handler.update_ocr_preview_text();
 
         self.icon_context.has_selection = self.selection.bounds.width != 0 && self.selection.bounds.height != 0;
 
@@ -151,12 +151,6 @@ impl App {
 
             Ok(())
         });
-
-        if ocr_text_changed {
-            if self.icon_context.settings.auto_copy {
-                self.attempt_copy();
-            }
-        }
 
         if render_result.is_err() {
             println!("Error rendering: {:?}", render_result);
@@ -609,6 +603,9 @@ impl ApplicationHandler for App {
                     }
                     self.ocr_handler.selection_changed(&self.selection);
                     if state == ElementState::Released {
+                        if self.icon_context.settings.auto_copy {
+                            self.attempt_copy();
+                        }
                         self.undo_stack.take_snapshot(&self.selection);
                     }
                 }

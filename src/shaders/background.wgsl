@@ -50,16 +50,20 @@ struct SDFResult {
 
 // Reference: https://www.shadertoy.com/view/wdBXRW
 fn polygon_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> SDFResult {
+    var num = i32(r_locals.vertex_count);
+
+    if num == 0 {
+        return SDFResult(100.0, 0);
+    }
+
     var screen_point: vec2<f32> = point * screen_dimensions;
 
-    var dist: f32 = dot(
-        screen_point - r_locals.vertices[0].position * screen_dimensions,
-        screen_point - r_locals.vertices[0].position * screen_dimensions
-    );
+    var rel_pos = screen_point - r_locals.vertices[0].position * screen_dimensions;
+    var dist: f32 = dot(rel_pos, rel_pos);
+
     var sign: f32 = 1.0;
     var index: i32 = 0;
 
-    var num = i32(r_locals.vertex_count);
     var last: vec2<f32> = r_locals.vertices[num - 1].position * screen_dimensions;
     for(var i = 0; i < num; i += 1) {
         var current: vec2<f32> = r_locals.vertices[i].position * screen_dimensions;
@@ -93,6 +97,12 @@ fn polygon_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> SD
 }
 
 fn vertex_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> SDFResult {
+    var num = i32(r_locals.vertex_count);
+
+    if num == 0 {
+        return SDFResult(100.0, 0);
+    }
+    
     var screen_point: vec2<f32> = point * screen_dimensions;
 
     var dist: f32 = dot(
@@ -102,8 +112,6 @@ fn vertex_signed_distance(point: vec2<f32>, screen_dimensions: vec2<f32>) -> SDF
     var index: i32 = 0;
 
     var squared_radius: f32 = VERTEX_HANDLE_CIRCLE_RADIUS * VERTEX_HANDLE_CIRCLE_RADIUS;
-
-    var num = i32(r_locals.vertex_count);
     for(var i = 0; i < num; i += 1) {
         var current: vec2<f32> = r_locals.vertices[i].position * screen_dimensions;
 

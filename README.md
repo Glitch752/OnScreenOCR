@@ -22,6 +22,20 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
 - [ ] Ability to drag polygon path with CTRL held
+- [ ] Optionally automatically start on boot
+- [ ] Proper installer and uninstaller
+
+## Installation
+For now, the way to install is by cloning the repository, building the project, and running it manually.  
+However, I plan to release standalone binaries once I get all the packaging working.
+
+```bash
+git clone --recurse-submodules https://github.com/Glitch752/OnScreenOCR.git
+cd OnScreenOCR
+cargo build --release
+# You can now run target/release/BetterOCRTool.exe from the project root
+./target/release/OnScreenOCR.exe
+```
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

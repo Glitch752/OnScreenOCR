@@ -162,7 +162,8 @@ struct PolygonEdgeEditState {
 #[derive(Debug, Clone, PartialEq)]
 struct ShiftSelectionEditState {
     start_location: (i32, i32),
-    start_origin: (f32, f32)
+    start_origin: (f32, f32),
+    from_edge: bool
 }
 
 #[derive(Debug, Clone, Default)]
@@ -222,14 +223,17 @@ impl Selection {
         match self.drag_state {
             DraggingEditState::None => {},
             DraggingEditState::NewBox(ref state) => {
+                self.bounds.x = state.start_origin.0 as i32;
+                self.bounds.y = state.start_origin.1 as i32;
                 self.bounds.width = x - self.bounds.x;
                 self.bounds.height = y - self.bounds.y;
                 self.polygon.set_from_bounds(&self.bounds);
                 
                 if self.shift_held {
                     self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
-                        start_location: state.start_location,
-                        start_origin: self.polygon.get_origin()
+                        start_location: (x, y),
+                        start_origin: self.polygon.get_origin(),
+                        from_edge: false
                     });
                 }
             }
@@ -241,10 +245,20 @@ impl Selection {
                 self.polygon.clamp_to_screen(screen_size);
                 
                 if !self.shift_held {
-                    self.drag_state = DraggingEditState::NewBox(NewBoxEditState {
-                        start_location: state.start_location,
-                        start_origin: self.polygon.get_origin()
-                    });
+                    let origin = self.polygon.get_origin();
+                    if state.from_edge {
+                        self.drag_state = DraggingEditState::ShiftPolygonEdge(PolygonEdgeEditState {
+                            edge_index: self.get_nearest_edge_index(x, y),
+                            start_origin: origin,
+                            start_location: (origin.0 as i32, origin.1 as i32)
+                        });
+                    } else {
+                        self.drag_state = DraggingEditState::PolygonVertex(PolygonVertexEditState {
+                            vertex_index: self.get_nearest_vertex_index(x, y),
+                            start_origin: origin,
+                            start_location: (origin.0 as i32, origin.1 as i32)
+                        });
+                    }
                 }
                 
                 self.bounds.enclose_polygon(&self.polygon);
@@ -275,6 +289,14 @@ impl Selection {
                         self.polygon.vertices[first_vertex].x = x;
                         self.polygon.vertices[second_vertex].x = x;
                     }
+                }
+
+                if self.shift_held && !icon_context.settings.use_polygon {
+                    self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
+                        start_location: (x, y),
+                        start_origin: self.polygon.get_origin(),
+                        from_edge: true
+                    });
                 }
 
                 self.bounds.enclose_polygon(&self.polygon);
@@ -315,11 +337,54 @@ impl Selection {
                     }
                 }
 
+                if self.shift_held {
+                    self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
+                        start_location: (x, y),
+                        start_origin: self.polygon.get_origin(),
+                        from_edge: false
+                    });
+                }
+
                 self.bounds.enclose_polygon(&self.polygon);
             }
         }
 
         true
+    }
+
+    pub fn get_nearest_vertex_index(&self, x: i32, y: i32) -> usize {
+        let mut min_distance = f32::INFINITY;
+        let mut min_index = 0;
+        for (i, vertex) in self.polygon.vertices.iter().enumerate() {
+            let distance = ((vertex.x - x as f32).powi(2) + (vertex.y - y as f32).powi(2)).sqrt();
+            if distance < min_distance {
+                min_distance = distance;
+                min_index = i;
+            }
+        }
+
+        min_index
+    }
+
+    pub fn get_nearest_edge_index(&self, x: i32, y: i32) -> usize {
+        let mut min_distance = f32::INFINITY;
+        let mut min_index = 0;
+        for i in 0..self.polygon.vertices.len() {
+            let vertex1 = &self.polygon.vertices[i];
+            let vertex2 = &self.polygon.vertices[(i + 1) % self.polygon.vertices.len()];
+            let (x1, y1) = (vertex1.x, vertex1.y);
+            let (x2, y2) = (vertex2.x, vertex2.y);
+
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let d = ((x1 - x as f32) * dy - (y1 - y as f32) * dx).abs() / (dx * dx + dy * dy).sqrt();
+            if d < min_distance {
+                min_distance = d;
+                min_index = i;
+            }
+        }
+
+        min_index
     }
 
     pub fn change_use_polygon(&mut self, new_use_polygon: bool) {
@@ -403,7 +468,8 @@ impl Selection {
                     } else {
                         self.drag_state = DraggingEditState::ShiftSelection(ShiftSelectionEditState {
                             start_location: (x, y),
-                            start_origin: self.polygon.get_origin()
+                            start_origin: self.polygon.get_origin(),
+                            from_edge: false
                         });
 
                         self.bounds.enclose_polygon(&self.polygon);
@@ -541,10 +607,10 @@ impl Default for Polygon {
         // The default state includes some vertices so we don't need to immediately resize the buffer
         Self {
             vertices: vec![
-                Vertex::new(0.0, 0.0),
-                Vertex::new(0.0, 0.0),
-                Vertex::new(0.0, 0.0),
-                Vertex::new(0.0, 0.0)
+                Vertex::new(-50.0, -50.0),
+                Vertex::new(-50.0, -50.0),
+                Vertex::new(-50.0, -50.0),
+                Vertex::new(-50.0, -50.0)
             ],
             hovered_vertex: None,
             hovered_edge: None

@@ -1,7 +1,6 @@
 use std::{sync::{Arc, Mutex}, thread};
 
 use inputbot::{get_keybd_key, KeybdKey::{self, LAltKey, LControlKey, LShiftKey, LSuper}};
-use tray_item::{IconSource, TrayItem};
 use winit::{event::KeyEvent, event_loop::EventLoop, platform::modifier_supplement::KeyEventExtModifierSupplement};
 
 use crate::settings::Keybind;
