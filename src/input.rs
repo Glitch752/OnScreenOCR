@@ -42,7 +42,6 @@ impl InputHandler {
         current_keybind: Arc<Mutex<Keybind>>
     ) {
         let loop_proxy = event_loop.create_proxy();
-        let loop_proxy_2 = event_loop.create_proxy();
 
         println!("Listening with initial keybind {}", current_keybind.lock().expect("Unable to lock keybind").to_owned().to_string());
 
@@ -63,19 +62,6 @@ impl InputHandler {
                 _ => {}
             }
         });
-
-        let mut tray = TrayItem::new(
-            "OnScreenOCR",
-            IconSource::Resource("tray-default"),
-        ).unwrap();
-
-        tray.add_menu_item("Open overlay", move || {
-            loop_proxy_2.send_event(()).expect("Unable to send event");
-        }).unwrap();
-
-        tray.add_menu_item("Quit", || {
-            std::process::exit(0);
-        }).unwrap();
 
         thread::spawn(|| {
             inputbot::handle_input_events(false);

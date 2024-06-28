@@ -33,6 +33,19 @@ fn main() {
     // Only run event loop on user interaction
     let event_loop = EventLoop::new().expect("Unable to create event loop");
     event_loop.set_control_flow(ControlFlow::Wait);
+    
+    let loop_proxy: winit::event_loop::EventLoopProxy<()> = event_loop.create_proxy();
+    let mut tray = tray_item::TrayItem::new(
+        "OnScreenOCR",
+        tray_item::IconSource::Resource("tray-default"),
+    ).unwrap();
+    tray.add_menu_item("Open overlay", move || {
+        loop_proxy.send_event(()).expect("Unable to send event");
+    }).unwrap();
+    tray.inner_mut().add_separator().unwrap();
+    tray.add_menu_item("Quit", || {
+        std::process::exit(0);
+    }).unwrap();
 
     let mut app = App::default();
     let keybind = app.icon_context.settings.open_keybind.clone();

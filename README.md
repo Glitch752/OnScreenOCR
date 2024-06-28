@@ -16,12 +16,12 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Support for multiple monitors
 - Keybinds for common actions (Ctrl+C to copy, Ctrl+Z to undo, arrows to move selection, etc.)
 - Full undo/redo history
+- Stays in system tray when closed
 
 ## TODO
 - [ ] Add support for MacOS and Linux
 - [ ] Feedback for copying to clipboard
 - [ ] Ability to drag polygon path with CTRL held
-- [ ] Stay in system tray when closed
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):
