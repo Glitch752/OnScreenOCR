@@ -129,6 +129,7 @@ impl OCRPreviewRenderer {
         icon_context: &super::IconContext
     ) -> Option<OwnedSection> {
         if ocr_preview_text.is_none() && self.last_text.is_none() {
+            self.last_placement = None;
             icon_renderer.update_text_icon_positions(None);
             return None;
         }
@@ -136,6 +137,13 @@ impl OCRPreviewRenderer {
         let mut text = ocr_preview_text.clone().unwrap_or_else(|| self.last_text.clone().unwrap());
 
         text = text.replace("\t", "  ");
+
+        if text.trim().is_empty() {
+            self.last_text = None;
+            self.last_placement = None;
+            icon_renderer.update_text_icon_positions(None);
+            return None;
+        }
 
         if icon_context.settings.add_pilcrow_in_preview {
             text = text.lines().map(|x| x.to_string() + " ¶").collect::<Vec<String>>().join("\n");
@@ -148,8 +156,9 @@ impl OCRPreviewRenderer {
         let visible = ocr_preview_text.is_some(); // && !icon_context.settings_panel_visible;
 
         let max_line_chars = text.lines().map(|x| x.chars().count()).max().unwrap_or(0) as i32;
-        let placement = self.get_preview_text_placement(!visible, window_size, bounds, text.lines().count() as i32, max_line_chars);
+        let placement = self.get_preview_text_placement(self.anim.fading_out(), window_size, bounds, text.lines().count() as i32, max_line_chars);
         if placement.is_none() && self.last_placement.is_none() {
+            self.last_text = None;
             icon_renderer.update_text_icon_positions(None);
             return None;
         }
@@ -169,7 +178,12 @@ impl OCRPreviewRenderer {
             )
             .with_bounds((placement.max_line_length, window_size.1 as f32))
         );
-        self.last_placement = Some(placement);
+        if self.anim.fading_out() {
+            self.last_placement = Some(placement);
+        } else {
+            self.last_placement = None;
+        }
+
         section
     }
 

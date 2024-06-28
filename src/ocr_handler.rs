@@ -186,6 +186,7 @@ impl OCRHandler {
 
     pub fn reset_state(&mut self) {
         self.ocr_preview_text = None;
+        while self.ocr_result_receiver.try_recv().is_ok() {}
     }
 
     pub fn selection_changed(&mut self, latest_selection: &Selection) {

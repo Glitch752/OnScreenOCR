@@ -258,27 +258,26 @@ impl Selection {
                     self.polygon.clamp_to_screen(screen_size);
                     
                     if !self.shift_held {
-                        self.check_edge_split_input(x, y, edge.edge_index);
+                        self.check_edge_split_input(x, y, edge.edge_index, icon_context.settings.use_polygon);
                     }
                 
                     self.bounds.enclose_polygon(&self.polygon);
                 } else {
-                    let curr_vertex = edge.edge_index;
-                    let next_vertex = (edge.edge_index + 1) % self.polygon.vertices.len();
-                    let prev_vertex = (edge.edge_index + self.polygon.vertices.len() - 1) % self.polygon.vertices.len();
-                    
-                    let (dx, dy) = (x - edge.start_location.0, y - edge.start_location.1);
-                    self.polygon.vertices[curr_vertex].x = edge.start_origin.0 + dx as f32;
-                    self.polygon.vertices[curr_vertex].y = edge.start_origin.1 + dy as f32;
-                    
-                    if edge.edge_index % 2 == 0 {
-                        self.polygon.vertices[prev_vertex].x = edge.start_origin.0 + dx as f32;
-                        self.polygon.vertices[next_vertex].y = edge.start_origin.1 + dy as f32;
+                    let first_vertex = edge.edge_index;
+                    let second_vertex = (edge.edge_index + 1) % self.polygon.vertices.len();
+
+                    if first_vertex % 2 == 0 {
+                        let y = edge.start_origin.1 + y as f32 - edge.start_location.1 as f32;
+                        self.polygon.vertices[first_vertex].y = y;
+                        self.polygon.vertices[second_vertex].y = y;
                     } else {
-                        self.polygon.vertices[next_vertex].x = edge.start_origin.0 + dx as f32;
-                        self.polygon.vertices[prev_vertex].y = edge.start_origin.1 + dy as f32;
+                        let x = edge.start_origin.0 + x as f32 - edge.start_location.0 as f32;
+                        self.polygon.vertices[first_vertex].x = x;
+                        self.polygon.vertices[second_vertex].x = x;
                     }
                 }
+
+                self.bounds.enclose_polygon(&self.polygon);
             }
             DraggingEditState::PolygonVertex(ref vertex) => {
                 if icon_context.settings.use_polygon {
@@ -298,8 +297,6 @@ impl Selection {
                         self.polygon.vertices[vertex.vertex_index].x = x;
                         self.polygon.vertices[vertex.vertex_index].y = y;
                     }
-
-                    self.bounds.enclose_polygon(&self.polygon);
                 } else {
                     let curr_vertex = vertex.vertex_index;
                     let next_vertex = (vertex.vertex_index + 1) % self.polygon.vertices.len();
@@ -317,14 +314,22 @@ impl Selection {
                         self.polygon.vertices[prev_vertex].y = vertex.start_origin.1 + dy as f32;
                     }
                 }
+
+                self.bounds.enclose_polygon(&self.polygon);
             }
         }
 
         true
     }
 
-    fn check_edge_split_input(&mut self, x: i32, y: i32, index: usize) {
-        if !self.shift_held {
+    pub fn change_use_polygon(&mut self, new_use_polygon: bool) {
+        if !new_use_polygon {
+            self.polygon.set_from_bounds(&self.bounds);
+        }
+    }
+
+    fn check_edge_split_input(&mut self, x: i32, y: i32, index: usize, use_polygon: bool) {
+        if !self.shift_held && use_polygon {
             // Split the edge
             let new_vertex = Vertex::new(x as f32, y as f32);
 
@@ -357,7 +362,7 @@ impl Selection {
             let hit = self.detect_polygon_hit(mouse_position);
             match hit {
                 PolygonHitResult::Vertex(index) => {
-                    if button == MouseButton::Right {
+                    if button == MouseButton::Right && icon_context.settings.use_polygon {
                         if self.polygon.vertices.len() <= 3 {
                             return false;
                         }
@@ -371,14 +376,14 @@ impl Selection {
                     }
                 },
                 PolygonHitResult::Edge(index) => {
-                    if button == MouseButton::Right {
+                    if button == MouseButton::Right && icon_context.settings.use_polygon {
                         if self.polygon.vertices.len() <= 4 {
                             return false;
                         }
                         self.polygon.vertices.remove(index);
                         self.polygon.vertices.remove(index % self.polygon.vertices.len());
                     } else {
-                        self.check_edge_split_input(x, y, index);
+                        self.check_edge_split_input(x, y, index, icon_context.settings.use_polygon);
                     }
                 },
                 PolygonHitResult::None => {

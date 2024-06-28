@@ -60,6 +60,10 @@ impl SmoothMoveFadeAnimation {
         self.visible_ratio
     }
 
+    pub fn fading_out(&self) -> bool {
+        self.target_visibility == false && self.visible_ratio > 0.
+    }
+
     pub fn move_point(&self, point: (f32, f32)) -> (f32, f32) {
         let (x, y) = point;
         match self.fade_move_direction {
@@ -113,6 +117,10 @@ impl SmoothFadeAnimation {
 
     pub fn fully_visible(&self) -> bool {
         (self.visible_ratio - 1.).abs() < 0.01
+    }
+
+    pub fn fading_out(&self) -> bool {
+        self.target_visibility == false && self.visible_ratio > 0.
     }
 
     pub fn get_opacity(&self) -> f32 {

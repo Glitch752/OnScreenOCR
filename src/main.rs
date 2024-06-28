@@ -129,6 +129,7 @@ impl App {
                 self.relative_mouse_pos,
                 &mut self.icon_context
             );
+
             shader_renderer.render(
                 encoder,
                 render_target,
@@ -206,8 +207,8 @@ impl App {
                     self.ocr_handler.update_ocr_settings(self.icon_context.settings.tesseract_settings.clone());
                 }
                 IconEvent::ChangeUsePolygon => {
-                    self.selection.reset();
-                    self.ocr_handler.reset_state();
+                    self.selection.change_use_polygon(self.icon_context.settings.use_polygon);
+                    self.ocr_handler.selection_changed(&self.selection);
                 }
                 IconEvent::ChangeKeybind => {
                     self.icon_context.settings.open_keybind_string = "Press a key combination".to_string();
@@ -269,11 +270,6 @@ impl App {
         self.input_handler.stop_detecting_keybind();
         self.window_state.as_ref().unwrap().window.set_visible(false);
         self.icon_context.settings.save();
-    }
-
-    fn fix_keys_held(&mut self) {
-        self.selection.shift_held = inputbot::KeybdKey::LShiftKey.is_pressed();
-        self.selection.ctrl_held = inputbot::KeybdKey::LControlKey.is_pressed();
     }
 
     fn undo(&mut self) {
@@ -416,8 +412,6 @@ impl ApplicationHandler for App {
             window.set_visible(true);
             window.focus_window();
             self.redraw();
-
-            self.fix_keys_held();
         }
     }
 
@@ -600,14 +594,11 @@ impl ApplicationHandler for App {
                     if self.selection.mouse_input(state, button, self.relative_mouse_pos, &mut self.icon_context) {
                         self.ocr_handler.ocr_preview_text = None; // Clear the preview if the selection completely moved
                     }
-                    self.window_state.as_ref().unwrap().window.request_redraw();
                     self.ocr_handler.selection_changed(&self.selection);
                     if state == ElementState::Released {
                         self.undo_stack.take_snapshot(&self.selection);
                     }
                 }
-
-                self.window_state.as_ref().unwrap().window.request_redraw();
             },
             #[allow(unused)]
             WindowEvent::CursorMoved {
@@ -622,7 +613,6 @@ impl ApplicationHandler for App {
                 let changed = self.selection.cursor_moved(self.relative_mouse_pos, self.size, &mut self.icon_context);
 
                 if changed {
-                    self.window_state.as_ref().unwrap().window.request_redraw();
                     self.ocr_handler.selection_changed(&self.selection);
                 }
             }
