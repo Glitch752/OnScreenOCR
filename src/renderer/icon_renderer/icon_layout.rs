@@ -15,7 +15,9 @@ pub enum IconEvent {
     RefreshOCRConfiguration,
     OpenOCRConfiguration,
 
-    ChangeUsePolygon
+    ChangeUsePolygon,
+
+    ChangeKeybind
 }
 
 pub fn get_icon_layouts() -> IconLayouts {
@@ -153,12 +155,13 @@ pub fn get_icon_layouts() -> IconLayouts {
 
     settings_layout.add_layout({
         let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-        layout.add_text(IconText::new("Keybind: __________________".to_string())); // Plenty of characters to make the text allocate enough background tiles
+        let mut text = IconText::new("Keybind: __________________".to_string());
+        text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Keybind: {}", ctx.settings.open_keybind_string) }));
+        layout.add_text(text); // Plenty of characters to make the text allocate enough background tiles
         layout.add_icon({
-            let mut icon = create_icon!("keybind", IconBehavior::Click);
+            let mut icon = create_icon!("edit", IconBehavior::Click);
             icon.click_callback = Some(Box::new(|ctx: &mut IconContext| {
-                todo!();
-                // ctx.channel.send(IconEvent::OpenOCRConfiguration).expect("Unable to send open OCR configuration event");
+                ctx.channel.send(IconEvent::ChangeKeybind).expect("Unable to send open change use keybind event");
             }));
             icon.tooltip_text = Some("Edit keybind".to_string());
             icon

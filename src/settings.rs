@@ -73,7 +73,12 @@ pub struct SettingsManager {
     pub close_on_copy: bool,
     pub auto_copy: bool,
 
+    /// Intended to be read-only by other modules -- use `set_open_keybind` to change.
+    /// This is the case because we also set `open_keybind_string` so we don't need to
+    /// lock the mutex every time we render the settings.
     pub open_keybind: Arc<Mutex<Keybind>>,
+    #[serde(skip, default)]
+    pub open_keybind_string: String,
 
     // Don't seriaize with the other settings; it's loaded from a separate file
     #[serde(skip)]
@@ -244,7 +249,10 @@ impl Default for SettingsManager {
 impl SettingsManager {
     pub fn new() -> Self {
         if let Ok(encoded) = std::fs::read(SETTINGS_PATH) {
-            return bincode::deserialize(&encoded).unwrap_or_else(|_| {
+            return bincode::deserialize(&encoded).map(|mut val: SettingsManager| {
+                val.open_keybind_string = val.open_keybind.lock().unwrap().to_string();
+                val
+            }).unwrap_or_else(|_| {
                 eprintln!("Failed to deserialize settings, using default settings and overwriting the file");
                 std::fs::remove_file(SETTINGS_PATH).unwrap();
                 Self::default()
@@ -263,12 +271,14 @@ impl SettingsManager {
 
             tesseract_settings: TesseractSettings::default(),
 
-            open_keybind: Arc::new(Mutex::new(Keybind::default()))
+            open_keybind: Arc::new(Mutex::new(Keybind::default())),
+            open_keybind_string: "Shift + Alt + Z".to_string()
         }
     }
 
     pub fn set_open_keybind(&mut self, keybind: Keybind) {
         *self.open_keybind.lock().unwrap() = keybind;
+        self.open_keybind_string = keybind.to_string();
     }
 
     pub fn save(&self) {

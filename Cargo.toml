@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 bytemuck = { version = "1.16.1", features = ["derive"] }
 image = "0.25.1"
-inputbot = "0.6"
+inputbot = { git = "https://github.com/obv-mikhail/InputBot", branch = "develop" }
 leptess = "0.14.0"
 libc = "0.2.155"
 pixels = "0.13.0"

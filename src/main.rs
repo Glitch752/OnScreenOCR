@@ -3,6 +3,7 @@
 
 use clipboard::{ClipboardContext, ClipboardProvider};
 use clipboard_image::copy_image_to_clipboard;
+use input::InputHandler;
 use inputbot::MouseCursor;
 use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
@@ -34,8 +35,8 @@ fn main() {
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let mut app = App::default();
-    input::handle(&event_loop, &mut app);
-
+    let keybind = app.icon_context.settings.open_keybind.clone();
+    app.input_handler.handle(&event_loop, keybind);
     event_loop.run_app(&mut app).expect("Unable to run event loop");
 }
 
@@ -55,6 +56,8 @@ struct App {
     icon_context: IconContext,
     icon_event_receiver: mpsc::Receiver<IconEvent>,
 
+    input_handler: InputHandler,
+
     undo_stack: UndoStack
 }
 
@@ -73,6 +76,8 @@ impl Default for App {
             
             icon_context,
             icon_event_receiver,
+
+            input_handler: InputHandler::new(),
 
             undo_stack: UndoStack::new()
         }
@@ -105,6 +110,15 @@ impl App {
         let ocr_text_changed = self.ocr_handler.update_ocr_preview_text();
 
         self.icon_context.has_selection = self.selection.bounds.width != 0 && self.selection.bounds.height != 0;
+
+        match self.input_handler.check_for_detected_keybind() {
+            Some(keybind) => {
+                *self.icon_context.settings.open_keybind.lock().expect("Unable to lock keybind") = keybind;
+                self.icon_context.settings.open_keybind_string = keybind.to_string();
+                self.icon_context.settings.save();
+            }
+            None => ()
+        }
 
         let render_result = pixels.render_with(|encoder, render_target, context| {
             shader_renderer.update(
@@ -195,6 +209,10 @@ impl App {
                     self.selection.reset();
                     self.ocr_handler.reset_state();
                 }
+                IconEvent::ChangeKeybind => {
+                    self.icon_context.settings.open_keybind_string = "Press a key combination".to_string();
+                    self.input_handler.detect_next_keybind();
+                }
             }
         }
     }
@@ -248,6 +266,7 @@ impl App {
     }
 
     fn hide_window(&mut self) {
+        self.input_handler.stop_detecting_keybind();
         self.window_state.as_ref().unwrap().window.set_visible(false);
         self.icon_context.settings.save();
     }
