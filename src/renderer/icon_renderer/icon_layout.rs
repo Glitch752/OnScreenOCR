@@ -155,7 +155,7 @@ pub fn get_icon_layouts() -> IconLayouts {
 
     settings_layout.add_layout({
         let mut layout = Layout::new(Direction::Horizontal, CrossJustify::Center, ICON_MARGIN, true);
-        let mut text = IconText::new("Keybind: __________________".to_string());
+        let mut text = IconText::new("Keybind: ____________________________".to_string());
         text.get_text = Some(Box::new(|ctx: &IconContext| { format!("Keybind: {}", ctx.settings.open_keybind_string) }));
         layout.add_text(text); // Plenty of characters to make the text allocate enough background tiles
         layout.add_icon({

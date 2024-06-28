@@ -461,35 +461,39 @@ impl ApplicationHandler for App {
                     move_dist *= 5.;
                 }
 
-                match event.logical_key.as_ref() {
-                    Key::Named(NamedKey::Escape) => {
+                if self.input_handler.keyboard_event(&event) {
+                    return;
+                } 
+
+                match (event.logical_key.as_ref(), self.selection.shift_held, self.selection.ctrl_held) {
+                    (Key::Named(NamedKey::Escape), _, _) => {
                         self.hide_window();
                     }
-                    Key::Named(NamedKey::Shift) => {
+                    (Key::Named(NamedKey::Shift), _, _) => {
                         self.selection.shift_held = event.state == winit::event::ElementState::Pressed;
                     }
-                    Key::Named(NamedKey::Control) => {
+                    (Key::Named(NamedKey::Control), _, _) => {
                         self.selection.ctrl_held =
                             event.state == winit::event::ElementState::Pressed;
                     }
-                    Key::Named(NamedKey::Tab) => {
+                    (Key::Named(NamedKey::Tab), false, false) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.icon_context.settings.use_polygon = !self.icon_context.settings.use_polygon;
                         }
                     }
-                    Key::Character("c") => {
+                    (Key::Character("c"), false, _) => {
                         self.icon_context.copy_key_held = event.state == winit::event::ElementState::Pressed;
                         if event.state == winit::event::ElementState::Pressed {
                             self.attempt_copy();
                         }
                     }
-                    Key::Character("s") => {
+                    (Key::Character("s"), false, _) => {
                         self.icon_context.screenshot_key_held = event.state == winit::event::ElementState::Pressed;
                         if event.state == winit::event::ElementState::Pressed {
                             self.attempt_screenshot();
                         }
                     }
-                    Key::Named(NamedKey::ArrowDown) => {
+                    (Key::Named(NamedKey::ArrowDown), _, _) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.polygon.move_by(0., move_dist);
                             self.selection.polygon.clamp_to_screen(self.size);
@@ -498,7 +502,7 @@ impl ApplicationHandler for App {
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
-                    Key::Named(NamedKey::ArrowUp) => {
+                    (Key::Named(NamedKey::ArrowUp), _, _) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.polygon.move_by(0., -move_dist);
                             self.selection.polygon.clamp_to_screen(self.size);
@@ -507,7 +511,7 @@ impl ApplicationHandler for App {
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
-                    Key::Named(NamedKey::ArrowLeft) => {
+                    (Key::Named(NamedKey::ArrowLeft), _, _) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.polygon.move_by(-move_dist, 0.);
                             self.selection.polygon.clamp_to_screen(self.size);
@@ -516,7 +520,7 @@ impl ApplicationHandler for App {
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
-                    Key::Named(NamedKey::ArrowRight) => {
+                    (Key::Named(NamedKey::ArrowRight), _, _) => {
                         if event.state == winit::event::ElementState::Pressed {
                             self.selection.polygon.move_by(move_dist, 0.);
                             self.selection.polygon.clamp_to_screen(self.size);
@@ -527,7 +531,12 @@ impl ApplicationHandler for App {
                     }
 
                     // Toggle settings
-                    Key::Character("1") | Key::Character("2") | Key::Character("3") | Key::Character("4") => {
+                    (Key::Character("1"), false, false) |
+                    (Key::Character("2"), false, false) |
+                    (Key::Character("3"), false, false) |
+                    (Key::Character("4"), false, false) |
+                    (Key::Character("5"), false, false) |
+                    (Key::Character("6"), false, false) => {
                         if event.state == winit::event::ElementState::Pressed && !event.repeat {
                             let settings = &mut self.icon_context.settings;
                             match event.logical_key.as_ref() {
@@ -542,18 +551,18 @@ impl ApplicationHandler for App {
                         }
                     }
 
-                    Key::Character("z") => {
+                    (Key::Character("z"), false, _) => {
                         if self.selection.ctrl_held && event.state == winit::event::ElementState::Pressed {
                             self.undo();
                         }
                     }
-                    Key::Character("y") => {
+                    (Key::Character("y"), false, _) => {
                         if self.selection.ctrl_held && event.state == winit::event::ElementState::Pressed {
                             self.redo();
                         }
                     }
 
-                    Key::Character("a") => {
+                    (Key::Character("a"), false, _) => {
                         if event.state == winit::event::ElementState::Pressed && self.selection.ctrl_held {
                             self.selection.bounds = self.size.into();
                             self.selection.polygon.set_from_bounds(&self.selection.bounds);
@@ -561,6 +570,7 @@ impl ApplicationHandler for App {
                             self.undo_stack.take_snapshot(&self.selection);
                         }
                     }
+
                     _ => (),
                 }
             }
