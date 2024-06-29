@@ -10,6 +10,7 @@ use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
 use selection::{Selection, SelectionInputResult};
 use undo_stack::UndoStack;
+use windows_sys::Win32::Foundation::HWND;
 use std::sync::{mpsc, Arc, LazyLock, Mutex};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
@@ -59,6 +60,9 @@ struct WindowState {
     window: Window,
     pixels: Pixels,
     shader_renderer: renderer::Renderer,
+    
+    #[cfg(windows)]
+    focus_before_overlay: HWND
 }
 
 struct App {
@@ -74,8 +78,9 @@ struct App {
     input_handler: InputHandler,
 
     undo_stack: UndoStack,
+    attempt_copy_on_next_ocr: bool,
 
-    user_feedback_queue: Vec<(String, [f32; 3])>,
+    user_feedback_queue: Vec<(String, [f32; 3])>
 }
 
 impl Default for App {
@@ -98,8 +103,9 @@ impl Default for App {
             input_handler: InputHandler::new(),
 
             undo_stack: UndoStack::new(),
+            attempt_copy_on_next_ocr: false,
 
-            user_feedback_queue: INITIALIZATION_ERRORS.lock().unwrap().iter().map(|err| (err.clone(), [0.8, 0.3, 0.4])).collect(),
+            user_feedback_queue: INITIALIZATION_ERRORS.lock().unwrap().iter().map(|err| (err.clone(), [0.8, 0.3, 0.4])).collect()
         }
     }
 
@@ -122,6 +128,12 @@ impl App {
 
         self.set_mouse_cursor();
 
+        let updated = self.ocr_handler.update_ocr_preview_text();
+        if updated && self.attempt_copy_on_next_ocr {
+            self.attempt_copy_on_next_ocr = false;
+            self.attempt_copy();
+        }
+
         let state = self.window_state.as_mut().unwrap();
 
         let pixels = &state.pixels;
@@ -131,8 +143,6 @@ impl App {
             let (message, color) = self.user_feedback_queue.remove(0);
             shader_renderer.show_user_feedback(message, color);
         }
-
-        self.ocr_handler.update_ocr_preview_text();
 
         self.icon_context.has_selection = self.selection.bounds.width != 0 && self.selection.bounds.height != 0;
 
@@ -242,6 +252,13 @@ impl App {
         }
     }
 
+    fn auto_copy(&mut self) {
+        if self.icon_context.settings.auto_copy {
+            self.attempt_copy_on_next_ocr = true;
+            self.ocr_handler.selection_changed(&self.selection);
+        }
+    }
+
     fn attempt_copy(&mut self) {
         if self.ocr_handler.ocr_preview_text.is_none() {
             return;
@@ -295,9 +312,30 @@ impl App {
     }
 
     fn hide_window(&mut self) {
+        if !self.window_state.as_ref().unwrap().window.is_visible().unwrap_or(false) {
+            return;
+        }
+
         self.input_handler.stop_detecting_keybind();
         self.window_state.as_ref().unwrap().window.set_visible(false);
         self.icon_context.settings.save();
+
+        #[cfg(windows)] {
+            unsafe {
+                let hwnd = self.window_state.as_ref().unwrap().focus_before_overlay;
+
+                let length = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowTextLengthW(hwnd) + 1;
+                let mut title: Vec<u16> = vec![0; length as usize];
+                let textw = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowTextW(hwnd, title.as_mut_ptr() as windows_sys::core::PWSTR, length);
+                if textw != 0 {
+                    if let Ok(title) = String::from_utf16(title[0..(textw as usize)].as_ref()) {
+                        println!("Refocused '{}'", title);
+                    }
+                }
+
+                windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+            }
+        }
     }
 
     fn undo(&mut self) {
@@ -343,6 +381,11 @@ impl ApplicationHandler for App {
                 monitor.clone().unwrap_or(event_loop.primary_monitor().unwrap_or(event_loop.available_monitors().next().expect("No monitors found")))
             );
 
+            let current_focus = {
+                #[cfg(windows)] unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }
+                #[cfg(not(windows))] { 0 as HWND }
+            };
+
             // Create the window
             let window = event_loop
                 .create_window(
@@ -380,6 +423,9 @@ impl ApplicationHandler for App {
                 window,
                 pixels,
                 shader_renderer,
+
+                #[cfg(windows)]
+                focus_before_overlay: current_focus
             });
             
             let window = &self.window_state.as_ref().unwrap().window;
@@ -398,6 +444,10 @@ impl ApplicationHandler for App {
 
             let window_state = self.window_state.as_mut().unwrap();
             let window = &window_state.window;
+
+            #[cfg(windows)] unsafe {
+                window_state.focus_before_overlay = windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
+            }
 
             // If the window is already open and on the same monitor, just hide it
             if window.is_visible() == Some(true) && window.current_monitor() == monitor {
@@ -512,9 +562,7 @@ impl ApplicationHandler for App {
                         return;
                     }
                     SelectionInputResult::SelectionFinished => {
-                        if self.icon_context.settings.auto_copy {
-                            self.attempt_copy();
-                        }
+                        self.auto_copy();
                         self.undo_stack.take_snapshot(&self.selection);
                         return;
                     }
@@ -652,9 +700,7 @@ impl ApplicationHandler for App {
                     }
                     self.ocr_handler.selection_changed(&self.selection);
                     if result == SelectionInputResult::SelectionFinished && state == ElementState::Released {
-                        if self.icon_context.settings.auto_copy {
-                            self.attempt_copy();
-                        }
+                        self.auto_copy();
                         self.undo_stack.take_snapshot(&self.selection);
                     }
                 }
@@ -680,9 +726,7 @@ impl ApplicationHandler for App {
                         self.ocr_handler.selection_changed(&self.selection);
                     }
                     SelectionInputResult::SelectionFinished => {
-                        if self.icon_context.settings.auto_copy {
-                            self.attempt_copy();
-                        }
+                        self.auto_copy();
                     }
                     _ => ()
                 }
