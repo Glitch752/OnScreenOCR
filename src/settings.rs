@@ -1,12 +1,16 @@
 use std::sync::{Arc, Mutex};
+use include_dir::{include_dir, Dir};
 
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
 use crate::INITIALIZATION_ERRORS;
 
-static SETTINGS_PATH: &str = "settings.bin";
-static TESSERACT_SETTNGS_PATH: &str = "tesseract_settings.toml";
-    
+static SETTINGS_FILE_NAME: &str = "settings.bin";
+static TESSERACT_SETTNGS_FILE_NAME: &str = "tesseract_settings.toml";
+
+static DEFAULT_CONFIG_FILES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/default_config_files");
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OCRLanguage {
     pub code: String,
@@ -85,6 +89,9 @@ pub struct SettingsManager {
     // Don't seriaize with the other settings; it's loaded from a separate file
     #[serde(skip)]
     pub tesseract_settings: TesseractSettings,
+    
+    #[serde(skip, default="crate::settings::get_project_dirs")]
+    project_dirs: ProjectDirs
 }
 
 #[derive(Debug, Serialize, Copy, Clone, Deserialize)]
@@ -110,7 +117,14 @@ pub struct TesseractSettings {
 
     pub ocr_languages: Vec<OCRLanguage>,
 
-    pub tesseract_parameters: toml::Table
+    pub tesseract_parameters: toml::Table,
+
+    #[serde(skip, default="crate::settings::get_project_dirs")]
+    project_dirs: ProjectDirs
+}
+
+pub fn get_project_dirs() -> ProjectDirs {
+    ProjectDirs::from("com", "", "OnScreenOCR").expect("Unable to get project directories")
 }
 
 impl Default for TesseractSettings {
@@ -121,11 +135,14 @@ impl Default for TesseractSettings {
 
 impl TesseractSettings {
     fn new() -> Self {
-        if let Ok(encoded) = std::fs::read(TESSERACT_SETTNGS_PATH) {
+        let project_dirs = get_project_dirs();
+        let tesseract_settings_path = project_dirs.config_dir().join(TESSERACT_SETTNGS_FILE_NAME);
+
+        if let Ok(encoded) = std::fs::read(&tesseract_settings_path) {
             let toml_string = String::from_utf8(encoded);
             if toml_string.is_err() {
                 eprintln!("Failed to decode Tesseract setting string");
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::remove_file(&tesseract_settings_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push("Failed to decode Tesseract setting string".to_string());
                 return Self::new();
             }
@@ -133,7 +150,7 @@ impl TesseractSettings {
             let toml_result = toml::from_str(&toml_string.unwrap());
             if let Err(error) = toml_result {
                 eprintln!("Failed to deserialize Tesseract settings: {}", error);
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::remove_file(&tesseract_settings_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to deserialize Tesseract settings: {}", error));
                 return Self::new();
             }
@@ -141,7 +158,7 @@ impl TesseractSettings {
             let verify_result = self::verify(toml_result.unwrap());
             if let Err(error) = verify_result {
                 eprintln!("Failed to verify Tesseract settings: {}", error);
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::remove_file(&tesseract_settings_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to verify Tesseract settings: {}", error));
                 return Self::new();
             }
@@ -149,7 +166,7 @@ impl TesseractSettings {
             return verify_result.unwrap();
         }
 
-        let settings = Self  {
+        let settings = Self {
             ocr_language_code: "eng".to_string(),
             tesseract_parameters: toml::Table::new(),
             export_mode: TesseractExportMode::UTF8,
@@ -158,7 +175,9 @@ impl TesseractSettings {
                 OCRLanguage::new("eng", "English"),
                 OCRLanguage::new("eng_slow", "English (slow)"),
                 OCRLanguage::new("deu", "German  "), // Spaces after this are intentional to make the layout look better
-            ]
+            ],
+
+            project_dirs
         };
 
         settings.save();
@@ -173,7 +192,7 @@ impl TesseractSettings {
 # If this file is messed up in such a way it can't be loaded, it will be re-created,
 # and the old file will be stored uner `{}.bak`.
 
-{}"#, TESSERACT_SETTNGS_PATH, encoded);
+{}"#, TESSERACT_SETTNGS_FILE_NAME, encoded);
         let encoded = encoded.replace("[tesseract_parameters]", r#"# Each entry should be a value for a parameter.
 # There are some useful parameters here: https://tesseract-ocr.github.io/tessdoc/tess3/ControlParams.html
 # This is a (old) list of all parameters: http://www.sk-spell.sk.cx/tesseract-ocr-parameters-in-302-version
@@ -192,24 +211,29 @@ export_mode = "#);
         let encoded = encoded.replacen("[[ocr_languages]]", r#"# Each entry should be a language, with a corresponding [name].traineddata file under /tessdata.
 # Name is an arbitrary string shown in the UI, and code is the language code.
 # To support automatic correction for other languages, add associated dictionary text files
-# to src/correction_data, following the existing conventions. More documentation is to come, and the
-# data/configuration files will probably eventually be moved to a more appropriate location.
+# to correction_data, following the existing conventions. More documentation is to come.
 [[ocr_languages]]"#, 1);
 
-        std::fs::write(TESSERACT_SETTNGS_PATH, encoded).unwrap();
+        let tesseract_settings_path = self.project_dirs.config_dir().join(TESSERACT_SETTNGS_FILE_NAME);
+        if !tesseract_settings_path.parent().unwrap().exists() {
+            std::fs::create_dir_all(tesseract_settings_path.parent().unwrap()).unwrap();
+        }
+        std::fs::write(tesseract_settings_path, encoded).unwrap();
     }
 
     pub fn absolute_path(&self) -> String {
-        std::fs::canonicalize(TESSERACT_SETTNGS_PATH).unwrap().to_string_lossy().to_string()
+        let tesseract_settings_path = self.project_dirs.config_dir().join(TESSERACT_SETTNGS_FILE_NAME);
+        std::fs::canonicalize(tesseract_settings_path).unwrap().to_string_lossy().to_string()
     }
 
     /// Puts initialization errors in the global error list
     pub fn reload(&mut self) {
-        if let Ok(encoded) = std::fs::read(TESSERACT_SETTNGS_PATH) {
+        let tesseract_settings_path = self.project_dirs.config_dir().join(TESSERACT_SETTNGS_FILE_NAME);
+        if let Ok(encoded) = std::fs::read(&tesseract_settings_path) {
             let toml_string = String::from_utf8(encoded);
             if toml_string.is_err() {
                 eprintln!("Failed to decode Tesseract setting string");
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::remove_file(&tesseract_settings_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push("Failed to decode Tesseract setting string".to_string());
                 *self = Self::new();
                 return;
@@ -218,7 +242,7 @@ export_mode = "#);
             let toml_result = toml::from_str(&toml_string.unwrap());
             if let Err(error) = toml_result {
                 eprintln!("Failed to deserialize Tesseract settings: {}", error);
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::remove_file(&tesseract_settings_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to deserialize Tesseract settings: {}", error));
                 *self = Self::new();
                 return;
@@ -227,7 +251,7 @@ export_mode = "#);
             let verify_result = self::verify(toml_result.unwrap());
             if let Err(error) = verify_result {
                 eprintln!("Failed to verify Tesseract settings: {}", error);
-                std::fs::remove_file(TESSERACT_SETTNGS_PATH).unwrap();
+                std::fs::remove_file(&tesseract_settings_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to verify Tesseract settings: {}", error));
                 *self = Self::new();
                 return;
@@ -237,7 +261,7 @@ export_mode = "#);
             return;
         } else {
             eprintln!("Failed to read Tesseract settings, using default settings and overwriting the file");
-            std::fs::rename(TESSERACT_SETTNGS_PATH, format!("{}.bak", TESSERACT_SETTNGS_PATH)).unwrap();
+            std::fs::rename(&tesseract_settings_path, tesseract_settings_path.with_extension(".toml.bak")).unwrap();
             *self = TesseractSettings::new();
             INITIALIZATION_ERRORS.lock().unwrap().push("Failed to read Tesseract settings, using default settings and overwriting the file".to_string());
             return;
@@ -280,7 +304,10 @@ export_mode = "#);
 
 impl SettingsManager {
     pub fn new() -> Self {
-        if let Ok(encoded) = std::fs::read(SETTINGS_PATH) {
+        let project_dirs = get_project_dirs();
+        let settings_file_path = project_dirs.config_dir().join(SETTINGS_FILE_NAME);
+
+        if let Ok(encoded) = std::fs::read(&settings_file_path) {
             let deserialized = bincode::deserialize(&encoded).map(|mut val: SettingsManager| {
                 val.open_keybind_string = val.open_keybind.lock().unwrap().to_string();
                 val
@@ -288,7 +315,7 @@ impl SettingsManager {
             
             if let Err(error) = deserialized {
                 eprintln!("Failed to deserialize settings, using default settings and overwriting the file");
-                std::fs::remove_file(SETTINGS_PATH).unwrap();
+                std::fs::remove_file(&settings_file_path).unwrap();
                 INITIALIZATION_ERRORS.lock().unwrap().push(format!("Failed to deserialize settings; using defaults: {}", error.to_string()));
                 return Self::new();
             }
@@ -309,7 +336,9 @@ impl SettingsManager {
             tesseract_settings: TesseractSettings::new(),
 
             open_keybind: Arc::new(Mutex::new(Keybind::default())),
-            open_keybind_string: "Shift + Alt + Z".to_string()
+            open_keybind_string: "Shift + Alt + Z".to_string(),
+
+            project_dirs
         }
     }
 
@@ -319,8 +348,14 @@ impl SettingsManager {
     }
 
     pub fn save(&self) {
+        let settings_file_path = self.project_dirs.config_dir().join(SETTINGS_FILE_NAME);
+
+        if !settings_file_path.parent().unwrap().exists() {
+            std::fs::create_dir_all(settings_file_path.parent().unwrap()).unwrap();
+        }
+
         let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
-        std::fs::write(SETTINGS_PATH, encoded).unwrap();
+        std::fs::write(&settings_file_path, encoded).unwrap();
 
         self.tesseract_settings.save();
     }

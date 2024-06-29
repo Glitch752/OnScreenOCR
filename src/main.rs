@@ -5,7 +5,7 @@ use clipboard::{ClipboardContext, ClipboardProvider};
 use clipboard_image::copy_image_to_clipboard;
 use input::InputHandler;
 use inputbot::MouseCursor;
-use ocr_handler::{FormatOptions, OCRHandler, LATEST_SCREENSHOT_PATH};
+use ocr_handler::{FormatOptions, OCRHandler, get_screenshot_path};
 use pixels::{Pixels, PixelsBuilder, SurfaceTexture};
 use screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, screenshot_from_handle, Screenshot};
 use selection::{Selection, SelectionInputResult};
@@ -279,7 +279,8 @@ impl App {
         if self.selection.bounds.width == 0 || self.selection.bounds.height == 0 {
             return;
         }
-        if !std::fs::try_exists(LATEST_SCREENSHOT_PATH).unwrap_or(false) {
+        let screenshot_path = get_screenshot_path();
+        if !std::fs::try_exists(&screenshot_path).unwrap_or(false) {
             return;
         }
 
@@ -288,8 +289,8 @@ impl App {
             return;
         }
         
-        // Load from LATEST_SCREENSHOT_PATH and crop
-        let img = image::open(LATEST_SCREENSHOT_PATH);
+        // Load from screenshot_path and crop
+        let img = image::open(screenshot_path);
         if img.is_err() {
             eprintln!("Error loading image: {:?}", img);
             return;

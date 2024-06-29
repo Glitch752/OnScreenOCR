@@ -1,9 +1,13 @@
-use std::{sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
+use std::{path::PathBuf, sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
 use crate::{screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractExportMode, TesseractSettings}};
 
-pub static LATEST_SCREENSHOT_PATH: &str = "latest.png";
+pub static LATEST_SCREENSHOT_FILE_NAME: &str = "latest.png";
+
+pub fn get_screenshot_path() -> PathBuf {
+    crate::settings::get_project_dirs().cache_dir().join(LATEST_SCREENSHOT_FILE_NAME)
+}
 
 const DEBOUNE_TIME: Duration = Duration::from_millis(50);
 
@@ -157,7 +161,7 @@ impl OCRHandler {
                     OCREvent::ScreenshotChanged(screenshot) => {
                         // Also save screenshot as latest.png for screenshot functionality and debugging
                         let screenshot_image = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::from_vec(screenshot.width as u32, screenshot.height as u32, screenshot.bytes.clone()).expect("Unable to create image buffer");
-                        screenshot_image.save(LATEST_SCREENSHOT_PATH).expect("Unable to save latest.png");
+                        screenshot_image.save(get_screenshot_path()).expect("Unable to save latest.png");
                         
                         init_data.current_screenshot = Some(screenshot);
                     }
