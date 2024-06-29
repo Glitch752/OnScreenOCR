@@ -25,9 +25,9 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 
 
 ## Pictures
-[A screenshot showing simple OCR capabilities](images/example1.png)
-[A screenshot showing polygon selection and available settings](images/example2.png)
-[A screenshot showing "reformat and correct result" with end-of-line hyphens](images/example3.png)
+![A screenshot showing simple OCR capabilities](images/example1.png)
+![A screenshot showing polygon selection and available settings](images/example2.png)
+![A screenshot showing "reformat and correct result" with end-of-line hyphens](images/example3.png)
 
 ## Installation
 You may download the application from the releases page.  
