@@ -19,6 +19,11 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Stays in system tray when closed
 - Numerous intuitive selection-related interactions, including drawing outlines, shifting edges/vertices, removing edges/vertices, and more.
 
+## Installation
+You may download the application from the releases page.  
+Currently, I only distribute x64 Windows binaries (since support for other platforms is untested and some features are not implemented on other platforms).  
+The application is bundled as a single executable, so you can run it and it will create an icon in your tray while running. The default keybind is `Shift + Alt + Z`, but you may change this within the overlay.
+
 ## Configuration
 Configuration files are stored under your user's configuration directory.  
 On Windows, this is `{FOLDERID_RoamingAppData}\OnScreenOCR` (usually `C:\Users\<username>\AppData\Roaming\OnScreenOCR`).
@@ -37,18 +42,6 @@ Configuration files include:
 - [ ] Optionally automatically start on boot
 - [ ] Proper installer and uninstaller
 - [ ] Better documentation on how the interaction system, configuration, and probably other parts of the application work
-
-## Installation
-For now, the way to install is by cloning the repository, building the project, and running it manually.  
-However, I plan to release standalone binaries once I get all the packaging working.
-
-```bash
-git clone --recurse-submodules https://github.com/Glitch752/OnScreenOCR.git
-cd OnScreenOCR
-cargo build --release
-# You can now run target/release/BetterOCRTool.exe from the project root
-./target/release/OnScreenOCR.exe
-```
 
 ## Development
 Since the OCR dependency used ([Leptess](https://github.com/houqp/leptess)) relies on vcpkg dependencies, you need to run the following (and clone with submodules!):

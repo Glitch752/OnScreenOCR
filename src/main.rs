@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 #![feature(duration_millis_float)]
 #![feature(fs_try_exists)]
 
