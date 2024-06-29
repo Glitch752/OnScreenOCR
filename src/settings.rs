@@ -214,10 +214,9 @@ export_mode = "#);
 # to correction_data, following the existing conventions. More documentation is to come.
 [[ocr_languages]]"#, 1);
 
+        ensure_settings_dir(&self.project_dirs);
+
         let tesseract_settings_path = self.project_dirs.config_dir().join(TESSERACT_SETTNGS_FILE_NAME);
-        if !tesseract_settings_path.parent().unwrap().exists() {
-            std::fs::create_dir_all(tesseract_settings_path.parent().unwrap()).unwrap();
-        }
         std::fs::write(tesseract_settings_path, encoded).unwrap();
     }
 
@@ -348,12 +347,9 @@ impl SettingsManager {
     }
 
     pub fn save(&self) {
+        ensure_settings_dir(&self.project_dirs);
+
         let settings_file_path = self.project_dirs.config_dir().join(SETTINGS_FILE_NAME);
-
-        if !settings_file_path.parent().unwrap().exists() {
-            std::fs::create_dir_all(settings_file_path.parent().unwrap()).unwrap();
-        }
-
         let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
         std::fs::write(&settings_file_path, encoded).unwrap();
 
@@ -362,5 +358,25 @@ impl SettingsManager {
 
     pub fn get_ocr_languages(&self) -> Vec<OCRLanguage> {
         self.tesseract_settings.ocr_languages.to_vec()
+    }
+}
+
+fn ensure_settings_dir(project_dirs: &ProjectDirs) {
+    let config_dir = project_dirs.config_dir();
+    if !config_dir.exists() || std::fs::read_dir(config_dir).map(|dir| dir.count()).unwrap_or(0) == 0 {
+        std::fs::create_dir_all(config_dir).unwrap();
+
+        for entry in DEFAULT_CONFIG_FILES.find("**/*").unwrap() {
+            if entry.as_dir().is_some() {
+                continue;
+            }
+
+            let path = config_dir.join(entry.path());
+
+            std::fs::create_dir_all(path.parent().expect("Failed to get parent directory")).unwrap();
+            std::fs::write(path, entry.as_file().unwrap().contents()).unwrap();
+        }
+
+        println!("Default settings and configuration files have been created in {}", config_dir.to_string_lossy());
     }
 }

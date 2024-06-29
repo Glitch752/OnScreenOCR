@@ -1,12 +1,15 @@
 use std::{path::PathBuf, sync::{mpsc, Arc, Mutex}, time::{Duration, Instant}};
 use std::thread::{self, JoinHandle};
 
-use crate::{screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{SettingsManager, TesseractExportMode, TesseractSettings}};
+use crate::{screenshot::{crop_screenshot_to_bounds, crop_screenshot_to_polygon, Screenshot}, selection::{Bounds, Selection}, settings::{get_project_dirs, SettingsManager, TesseractExportMode, TesseractSettings}};
 
 pub static LATEST_SCREENSHOT_FILE_NAME: &str = "latest.png";
 
 pub fn get_screenshot_path() -> PathBuf {
-    crate::settings::get_project_dirs().cache_dir().join(LATEST_SCREENSHOT_FILE_NAME)
+    let project_dirs = crate::settings::get_project_dirs();
+    let cache_dir = project_dirs.cache_dir();
+    std::fs::create_dir_all(&cache_dir).expect("Unable to create cache directory");
+    cache_dir.join(LATEST_SCREENSHOT_FILE_NAME)
 }
 
 const DEBOUNE_TIME: Duration = Duration::from_millis(50);
@@ -81,7 +84,8 @@ impl OCRSelectionData {
 }
 
 fn configure_tesseract(tesseract_settings: TesseractSettings) -> leptess::tesseract::TessApi {
-    let mut tess_api = leptess::tesseract::TessApi::new(Some("./tessdata"), &tesseract_settings.ocr_language_code).expect("Unable to create Tesseract instance");
+    let directory = get_project_dirs().config_dir().join("tessdata");
+    let mut tess_api = leptess::tesseract::TessApi::new(directory.to_str(), &tesseract_settings.ocr_language_code).expect("Unable to create Tesseract instance");
     tesseract_settings.configure_tesseract(&mut tess_api);
     tess_api
 }

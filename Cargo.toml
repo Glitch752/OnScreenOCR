@@ -22,7 +22,7 @@ toml = "0.8.14"
 quick-xml = "0.34.0"
 tray-item = "0.10.0"
 directories = "5.0.1"
-include_dir = "0.7.4"
+include_dir = { version = "0.7.4", features = ["glob"] }
 
 [build-dependencies]
 image = "0.25.1"
