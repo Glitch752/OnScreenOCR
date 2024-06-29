@@ -1,5 +1,9 @@
 # OnScreenOCR
 
+<img src="images/logo.svg" width="350px">
+
+*Not my best logo design... I needed something for the system tray, though!*
+
 A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with additional functionality:
 - Fully GPU-accelerated rendering using wgpu
 - Multi-platform support: Windows, MacOS, and Linux (untested at the moment, some features TODO on other platforms)
@@ -18,6 +22,12 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Full undo/redo history
 - Stays in system tray when closed
 - Numerous intuitive selection-related interactions, including drawing outlines, shifting edges/vertices, removing edges/vertices, and more.
+
+
+## Pictures
+[A screenshot showing simple OCR capabilities](images/example1.png)
+[A screenshot showing polygon selection and available settings](images/example2.png)
+[A screenshot showing "reformat and correct result" with end-of-line hyphens](images/example3.png)
 
 ## Installation
 You may download the application from the releases page.  
