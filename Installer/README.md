@@ -6,3 +6,8 @@
 3. Change `MyAppVersion` to the current app version.
 4. Compile the installer
 5. The installer will be in a folder called `Output`
+
+
+Notes:
+`pre-install_message.txt` contains the message that is displayed before installation.
+
