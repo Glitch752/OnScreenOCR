@@ -22,7 +22,7 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 - Full undo/redo history
 - Stays in system tray when closed
 - Numerous intuitive selection-related interactions, including drawing outlines, shifting edges/vertices, removing edges/vertices, and more.
-
+- An installer that allows you to automatically start the application on boot
 
 ## Pictures
 ![A screenshot showing simple OCR capabilities](images/example1.png)
@@ -32,7 +32,8 @@ A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with a
 ## Installation
 You may download the application from the releases page.  
 Currently, I only distribute x64 Windows binaries (since support for other platforms is untested and some features are not implemented on other platforms).  
-The application is bundled as a single executable, so you can run it and it will create an icon in your tray while running. The default keybind is `Shift + Alt + Z`, but you may change this within the overlay.
+I distribute an installer (`OnScreenOCR.exe`) and a standalone executable (`OnScreenOCRStandalone.exe`).  
+The application will create an icon in your tray while running. The default keybind is `Shift + Alt + Z`, but you may change this within the overlay.
 
 ## Configuration
 Configuration files are stored under your user's configuration directory.  
@@ -49,8 +50,6 @@ Configuration files include:
 
 ## TODO
 - [ ] Add support for MacOS and Linux
-- [ ] Optionally automatically start on boot
-- [ ] Proper installer and uninstaller
 - [ ] Better documentation on how the interaction system, configuration, and probably other parts of the application work
 
 ## Development
@@ -73,3 +72,14 @@ Finally, you can run the project:
 ```bash
 cargo run
 ```
+
+# Creating the installer
+
+0. Install [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+1. Build the program with `cargo build --release` and move the executable from `target/release/OnScreenOCR.exe` into this folder. Make sure it is called `OnScreenOCR.exe`.
+2. Open `OnScreenOCR.iss` in Inno Setup Compiler
+3. Change `MyAppVersion` to the current app version.
+4. Run Build -> Compile
+5. The installer will be placed in a folder called `Output`
+
+`installer/pre-install_message.txt` contains the message that is displayed before installation.

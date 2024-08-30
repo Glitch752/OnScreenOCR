@@ -1,1 +1,3 @@
 /target
+/installer/*.exe
+/installer/Output
