@@ -29,7 +29,7 @@ DisableProgramGroupPage=yes
 InfoBeforeFile=.\pre-install_message.txt
 ; Remove the following line to run in administrative install mode (install for all users.)
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequiredOverridesAllowed=commandline
 OutputDir=.\Output
 OutputBaseFilename=OnScreenOCR
 SetupIconFile=.\logo.ico
