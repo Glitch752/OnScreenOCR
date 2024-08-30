@@ -1,10 +1,23 @@
 # OnScreenOCR
+A powerful graphical on-screen optical character recognition (OCR) tool using Tesseract. I made this tool because I found places where I would like to improve existing tools like Microsoft PowerToys' "Text Extract" feature.
 
 <img src="images/logo.svg" width="350px">
 
-*Not my best logo design... I needed something for the system tray, though!*
+*Not my best logo design... I needed something for the system tray, though!*  
 
-A tool designed to mimic Microsoft PowerToys' "Text Extract feature", but with additional functionality:
+<ol>
+  <li><a href="#features">Features</a></li>
+  <li><a href="#pictures">Pictures</a></li>
+  <li><a href="#installation">Installation</a></li>
+  <li><a href="#configuration">Configuration</a></li>
+  <li><a href="#todo">TODO</a></li>
+  <li><a href="#development">Development</a></li>
+  <li><a href="#creating-the-installer">Creating the installer</a></li>
+</ol>
+
+## Features
+
+The features of OnScreenOCR include:
 - Fully GPU-accelerated rendering using wgpu
 - Multi-platform support: Windows, MacOS, and Linux (untested at the moment, some features TODO on other platforms)
 - Live preview of the OCR result
@@ -73,7 +86,7 @@ Finally, you can run the project:
 cargo run
 ```
 
-# Creating the installer
+## Creating the installer
 
 0. Install [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 1. Build the program with `cargo build --release` and move the executable from `target/release/OnScreenOCR.exe` into this folder. Make sure it is called `OnScreenOCR.exe`.
