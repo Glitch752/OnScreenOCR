@@ -1,0 +1,3 @@
+The default shortcut is Shift + Alt + Z
+
+https://github.com/Glitch752/OnScreenOCR
